@@ -48,7 +48,7 @@ func (a GrpcApi) generate(addr, reportFile, nonceFile string) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutSec*time.Second)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, addr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	conn, err := grpc.DialContext(ctx, addr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock(),grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(500*1024*1024), grpc.MaxCallSendMsgSize(500*1024*1024)))
 	if err != nil {
 		log.Fatalf("Failed to connect to cmcd: %v", err)
 	}
@@ -95,7 +95,7 @@ func (a GrpcApi) verify(addr, reportFile, resultFile, nonceFile string, ca, poli
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutSec*time.Second)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, addr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	conn, err := grpc.DialContext(ctx, addr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock(),grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(500*1024*1024), grpc.MaxCallSendMsgSize(500*1024*1024)))
 	if err != nil {
 		log.Fatalf("Failed to connect to cmcd: %v", err)
 	}

@@ -64,7 +64,7 @@ func (wrapper GrpcServerWrapper) Serve(addr string, config *ServerConfig) error 
 	}
 
 	// Start gRPC server
-	s := grpc.NewServer()
+	s := grpc.NewServer(grpc.MaxSendMsgSize(1024*1024*1024), grpc.MaxRecvMsgSize(1024*1024*1024))
 	api.RegisterCMCServiceServer(s, server)
 
 	log.Infof("Waiting for requests on %v", listener.Addr())

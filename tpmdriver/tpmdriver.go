@@ -252,7 +252,8 @@ func (t *Tpm) Measure(nonce []byte) (ar.Measurement, error) {
 
 		imaDigestsHex := make([]ar.HexByte, 0)
 		for _, elem := range imaDigests {
-			imaDigestsHex = append(imaDigestsHex, elem[:])
+            elemcp := elem
+            imaDigestsHex = append(imaDigestsHex, elemcp[:])
 		}
 
 		// Find the IMA PCR in the TPM Measurement
@@ -838,6 +839,7 @@ func getTpmPcrs(c *Config) ([]int, error) {
 
 	var osMan ar.OsManifest
 	var rtmMan ar.RtmManifest
+	var appManArr []ar.AppManifest
 
 	for i, m := range c.Metadata {
 
@@ -866,15 +868,20 @@ func getTpmPcrs(c *Config) ([]int, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to unmarshal data from OS Manifest: %v", err)
 			}
+		} else if t.Type == "App Manifest" {
+			var appManifest ar.AppManifest
+			err = c.Serializer.Unmarshal(payload, &appManifest)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal data from App Manifest: %v", err)
+			}
+			appManArr = append(appManArr, appManifest)
 		}
 	}
 
-	// Check if manifests were found
 	if osMan.Type != "OS Manifest" || rtmMan.Type != "RTM Manifest" {
 		return nil, errors.New("failed to find all manifests")
 	}
 
-	// Generate the list of PCRs to be included in the quote
 	pcrs := make([]int, 0)
 	log.Debug("Parsing ", len(rtmMan.ReferenceValues), "RTM Reference Values")
 	for _, ver := range rtmMan.ReferenceValues {
@@ -892,6 +899,18 @@ func getTpmPcrs(c *Config) ([]int, error) {
 		}
 		if !exists(*ver.Pcr, pcrs) {
 			pcrs = append(pcrs, *ver.Pcr)
+		}
+	}
+
+	log.Debug("Parsing ", len(appManArr), " App Reference Manifests")
+	for _, appManifest := range appManArr {
+		for _, ver := range appManifest.ReferenceValues {
+			if ver.Type != "TPM Reference Value" || ver.Pcr == nil {
+				continue
+			}
+			if !exists(*ver.Pcr, pcrs) {
+				pcrs = append(pcrs, *ver.Pcr)
+			}
 		}
 	}
 

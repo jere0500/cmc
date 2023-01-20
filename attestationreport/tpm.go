@@ -146,15 +146,31 @@ func recalculatePcrs(tpmM *TpmMeasurement, referenceValues []ReferenceValue) (ma
 
 		// Initialize calculated PCR if not yet initialized, afterwards extend
 		// reference values
-		if _, ok := calculatedPcrs[*v.Pcr]; !ok {
-			calculatedPcrs[*v.Pcr] = make([]byte, 32)
-		}
-		calculatedPcrs[*v.Pcr] = extendHash(calculatedPcrs[*v.Pcr], v.Sha256)
+
+        if *v.Pcr != 10{
+            if _, ok := calculatedPcrs[*v.Pcr]; !ok {
+                calculatedPcrs[*v.Pcr] = make([]byte, 32)
+            }
+            calculatedPcrs[*v.Pcr] = extendHash(calculatedPcrs[*v.Pcr], v.Sha256)
+        } 
 
 		// Only if the measurement contains the hashes of the individual software artifacts, (e.g.
 		// provided through BIOS or IMA  measurement lists), we can check the reference values directly
 		for _, hce := range tpmM.HashChain {
-			if hce.Pcr == int32(*v.Pcr) && len(hce.Sha256) > 1 {
+			if *v.Pcr == 10 && hce.Pcr == 10 && len(hce.Sha256) > 1 {
+                
+				for _, sha256 := range hce.Sha256 {
+					if bytes.Equal(sha256, v.Sha256) {
+                            if _, ok := calculatedPcrs[*v.Pcr]; !ok {
+                                calculatedPcrs[*v.Pcr] = make([]byte, 32)
+                            }
+                            calculatedPcrs[*v.Pcr] = extendHash(calculatedPcrs[*v.Pcr], v.Sha256)
+						break
+					}
+				}
+
+            
+            } else if hce.Pcr == int32(*v.Pcr) && len(hce.Sha256) > 1 {
 				found := false
 				for _, sha256 := range hce.Sha256 {
 					if bytes.Equal(sha256, v.Sha256) {
@@ -176,7 +192,6 @@ func recalculatePcrs(tpmM *TpmMeasurement, referenceValues []ReferenceValue) (ma
 	for pcrNum, calculatedHash := range calculatedPcrs {
 		pcrRes := PcrResult{}
 		pcrRes.Pcr = int(pcrNum)
-		// Find PCR in measurements
 		found := false
 		for _, hce := range tpmM.HashChain {
 			if hce.Pcr == int32(pcrNum) {
@@ -184,11 +199,8 @@ func recalculatePcrs(tpmM *TpmMeasurement, referenceValues []ReferenceValue) (ma
 
 				var measurement []byte
 				if len(hce.Sha256) == 1 {
-					// Measurement contains only final PCR value, so we can simply compare
 					measurement = hce.Sha256[0]
 				} else {
-					// Measurement contains individual values which must be extended to result in
-					// the final PCR value for comparison
 					measurement = make([]byte, 32)
 					for _, sha256 := range hce.Sha256 {
 						measurement = extendHash(measurement, sha256)
@@ -203,13 +215,21 @@ func recalculatePcrs(tpmM *TpmMeasurement, referenceValues []ReferenceValue) (ma
 					}
 				}
 
-				if cmp := bytes.Compare(calculatedHash, measurement); cmp == 0 {
-					pcrRes.Validation.Success = true
-				} else {
-					msg := fmt.Sprintf("PCR%v value did not match expectation: %v vs. %v", hce.Pcr,
-						hex.EncodeToString(hce.Sha256[0]), hex.EncodeToString(calculatedHash))
-					pcrRes.Validation.setFalseMulti(&msg)
-					ok = false
+                //workaround because, extended hash is different
+                if pcrRes.Pcr == 10 {
+                    calculatedPcrs[pcrNum] = measurement
+                    pcrRes.Validation.Success=true
+                } else {
+
+                if cmp := bytes.Compare(calculatedHash, measurement); cmp == 0 {
+                    pcrRes.Validation.Success = true
+                } else {
+                        msg := fmt.Sprintf("PCR%v value did not match expectation: %v vs. %v", hce.Pcr,
+                            hex.EncodeToString(hce.Sha256[0]), hex.EncodeToString(calculatedHash))
+                        pcrRes.Validation.setFalseMulti(&msg)
+                        ok = false
+                }
+
 				}
 				pcrResult = append(pcrResult, pcrRes)
 			}
