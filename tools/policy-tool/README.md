@@ -1,4 +1,4 @@
-# Shell script to generate a Policy
+# Shell script to modify policyDeny.js
 - requires jq
 
 policyDenyGen.sh

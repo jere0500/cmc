@@ -5,21 +5,20 @@
 ```
 sudo apt install apt-rdepends jq
 ```
+- setup *Fraunhofer-AISEC/cmc* and *Fraunhofer-AISEC/tpm-pcr-tools*
 
 2. setup of other dependencies in *dependencies/*
-- copy parse-ima-log and parse-srtm-pcrs binary to dependencies
-- compile gotouch with:
+- compile gotouch in *dependencies/* with:
 ```
 go build gotouch.go
 ```
 
-- for automatic signing: copy signing-tool binary to dependencies
-- copy pki to the manifestgeneration-tool directory
+- for automated signing:
+- copy *pki/* to the *manifestgeneration-tool/* directory
 
-3. set-up template-files
+3. setup template-files
 copy app.manifest.json os.manifest.json rtm.manifest.json device.description.json to template-files
-- modify the dependency structure so that the dependencies are set correctly
-*rtm.manifest.json and os.manifest.json should already contain the required reference values*.
+rtm.manifest.json and os.manifest.json should already contain the required reference values, e.g. from *./setup-full-simple*.
 
 ## Usage
 ./measureAll.sh
