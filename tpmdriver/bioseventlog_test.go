@@ -23,6 +23,17 @@ import (
 	ar "github.com/Fraunhofer-AISEC/cmc/attestationreport"
 	"github.com/sirupsen/logrus"
 )
+func convertUint8ArrayToString(uint8Array []uint8) string {
+	result := ""
+	for _, val := range uint8Array {
+		if val < 128 && (val > 27 || (val < 14 && val > 8))  {
+			result += string(val)
+		} else {
+			result += "."
+		}
+	}
+	return result
+}
 
 func Test_parseBiosMeasurements(t *testing.T) {
 	type args struct {
@@ -49,7 +60,7 @@ func Test_parseBiosMeasurements(t *testing.T) {
 				return
 			}
 			for _, value := range attestationreport{
-				logrus.Println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256))	
+				logrus.Println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+convertUint8ArrayToString(value.AdditionInfo))	
 			}
 		})
 	}

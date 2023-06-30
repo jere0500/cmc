@@ -154,7 +154,7 @@ func parseBiosMeasurements(data []byte) ([]ar.ReferenceValue, error) {
 
 		//reading the first PCR entry
 		var pcrIndex, eventType, digestCount uint32;
-		// var pcrIndex int
+		// read basic data
 		binary.Read(buf, binary.LittleEndian, &pcrIndex)
 		binary.Read(buf, binary.LittleEndian, &eventType)
 		eventName := eventtypeToString(eventType)
@@ -187,8 +187,10 @@ func parseBiosMeasurements(data []byte) ([]ar.ReferenceValue, error) {
 			return nil, fmt.Errorf("not enough remaining bytes in buffer: %w", err)
 		}
 
-		//skip the bytes of the event
-		buf.Next(int(eventSize))
+		//skip the bytes of the event, bytes of the event should be added to the array
+		eventData := make([]uint8, eventSize)
+		binary.Read(buf, binary.LittleEndian, &eventData)
+		// buf.Next(int(eventSize))
 
 		//either Sha256 or Sha384 must be present
 		if !(len(sha384Digest)==SHA384_DIGEST_LEN || len(sha256Digest)==SHA256_DIGEST_LEN){
@@ -198,7 +200,7 @@ func parseBiosMeasurements(data []byte) ([]ar.ReferenceValue, error) {
 
 
 		//add to extends, 
-		extends = append(extends, ar.ReferenceValue{Type: EVENT_TYPE, Sha256: sha256Digest, Sha384: sha384Digest, Name: eventName, Pcr: &pcrP, Snp: nil})
+		extends = append(extends, ar.ReferenceValue{Type: EVENT_TYPE, Sha256: sha256Digest, Sha384: sha384Digest, Name: eventName, Pcr: &pcrP, Snp: nil, AdditionInfo: eventData})
 	}
 
 	return extends, nil
