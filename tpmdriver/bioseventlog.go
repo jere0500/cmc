@@ -32,10 +32,7 @@ const (
 	SHA384_DIGEST_LEN = 48
 	MAX_TCG_EVENT_LEN = 1024
 	EVENT_TYPE = "Bios Measurement"
-)
 
-// Constants
-var (
 	EV_PREBOOT_CERT=uint32(0)
 	EV_POST_CODE=uint32(1)
 	EV_UNUSED=uint32(2)
@@ -190,7 +187,11 @@ func parseBiosMeasurements(data []byte) ([]ar.ReferenceValue, error) {
 		//skip the bytes of the event, bytes of the event should be added to the array
 		eventData := make([]uint8, eventSize)
 		binary.Read(buf, binary.LittleEndian, &eventData)
-		// buf.Next(int(eventSize))
+		
+		// // EV_EFI_VARIABLE_DRIVER_CONFIG entries are long in the example, therefore handle such entries different
+		// if(eventType = 0x80000001){
+		//
+		// }
 
 		//either Sha256 or Sha384 must be present
 		if !(len(sha384Digest)==SHA384_DIGEST_LEN || len(sha256Digest)==SHA256_DIGEST_LEN){

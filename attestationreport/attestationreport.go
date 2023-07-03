@@ -186,6 +186,7 @@ type ReferenceValue struct {
 	Name   string      `json:"name,omitempty" cbor:"3,keyasint,omitempty"`
 	Pcr    *int        `json:"pcr,omitempty" cbor:"4,keyasint,omitempty"`
 	Snp    *SnpDetails `json:"snp,omitempty" cbor:"5,keyasint,omitempty"`
+	AdditionInfo    []uint8
 }
 
 // AppDescription represents the attestation report

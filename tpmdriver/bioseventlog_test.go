@@ -16,14 +16,22 @@
 package tpmdriver
 
 import (
+	"bytes"
+	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"strconv"
 	"testing"
+	"unicode/utf16"
+	"unsafe"
 
 	ar "github.com/Fraunhofer-AISEC/cmc/attestationreport"
 	"github.com/sirupsen/logrus"
 )
-func convertUint8ArrayToString(uint8Array []uint8) string {
+
+type UEFI_PHYSICAL_ADDRESS uint64
+
+func interpretUint8ArrayAsString(uint8Array []uint8) string {
 	result := ""
 	for _, val := range uint8Array {
 		if val < 128 && (val > 27 || (val < 14 && val > 8))  {
@@ -34,6 +42,132 @@ func convertUint8ArrayToString(uint8Array []uint8) string {
 	}
 	return result
 }
+
+//helping structure for parsing 
+type UEFI_VARIABLE_DATA struct{
+	VariableName0 uint64
+	VariableName1 uint64 //for two uint64, because the GUID is 16 Byte long = 128 Bit
+	UnicodeNameLength uint64
+	VariableDataLength uint64
+	UnicodeName []uint16 //interpreted as Unicode-char16
+	VariableData []int8
+}
+
+
+func interpretAdditionalInformationUEFI_VARIABLE_DATA(uint8Array []uint8) string{
+	var output string
+	buf := bytes.NewBuffer(uint8Array)
+
+	//minimum lenght 16+8+8=32 bytes
+	for buf.Len()>=32{ 
+		//TODO checks for not reading to much
+		var variableName0, variableName1, unicodeNameLength, variableDataLength uint64;	
+
+		//1. part: read binary data into variables
+		binary.Read(buf, binary.LittleEndian, &variableName0)
+		binary.Read(buf, binary.LittleEndian, &variableName1)
+		binary.Read(buf, binary.LittleEndian, &unicodeNameLength)
+		binary.Read(buf, binary.LittleEndian, &variableDataLength)
+
+		//read the amount of data into the []data fields
+		
+		if buf.Len()<2*int(unicodeNameLength){
+			//just stop reading
+			return output
+		}
+		unicodeName := make([]uint16, unicodeNameLength)	
+		binary.Read(buf, binary.LittleEndian, &unicodeName)
+
+		if buf.Len()<int(variableDataLength){
+			//just stop reading
+			return output
+		}
+		variableData := make([]uint8, variableDataLength)
+		binary.Read(buf, binary.LittleEndian, &variableData)
+
+		//2. part: parse variables as Strings
+		output+= "UEFI_VARIABLE_DATA {\n"
+		output+= "VariableName: "
+		output += fmt.Sprintf("%x", variableName0)
+		output += fmt.Sprintf("%x", variableName1)
+		output+= "\nUnicodeNameLength: "
+		output+=strconv.Itoa(int(unicodeNameLength)) //todo avoid casting to int
+		output+= "\nVariableDataLength: "
+		output+=strconv.Itoa(int(variableDataLength)) //todo avoid casting to int
+		output+= "\nUnicodeName: "
+		runes := utf16.Decode(unicodeName)
+		output+= string(runes)
+		output+= "\nVariableData: "
+		output+= hex.EncodeToString(variableData)
+		output+= "\n}\n"
+	}
+
+	return output
+}
+
+type UEFI_IMAGE_LOAD_EVENT struct{
+	ImageLocationInMemory UEFI_PHYSICAL_ADDRESS
+	ImageLengthInMemory uint64
+	ImageLinkTimeAddress uint64
+	LengthOfDevicePath uint64
+	DevicePath []uint16 //as far as understood is interpreted as utf16 char[]
+}
+func interpretAdditionalInformationUEFI_IMAGE_LOAD_EVENT(uint8Array []uint8) string{
+	var output string
+	buf := bytes.NewBuffer(uint8Array)
+
+	//minimum lenght sizeof UEFI_PHYSICAL_ADDRESS+8+8+8=~32 bytes
+	for buf.Len()>=24+int(unsafe.Sizeof(UEFI_PHYSICAL_ADDRESS(0))){ 
+		var imageLengthInMemory, imageLinkTimeAddress, lengthOfDevicePath uint64
+		var imageLocationInMemory UEFI_PHYSICAL_ADDRESS
+
+		binary.Read(buf, binary.LittleEndian, &imageLocationInMemory)
+		binary.Read(buf, binary.LittleEndian, &imageLengthInMemory)
+		binary.Read(buf, binary.LittleEndian, &imageLinkTimeAddress)
+		binary.Read(buf, binary.LittleEndian, &lengthOfDevicePath)
+
+		
+		if buf.Len()<int(lengthOfDevicePath){
+			return output
+		}
+
+		//device path can't be easily specified, because of the high number of different types
+		devicePath :=make([]uint8, lengthOfDevicePath)
+		binary.Read(buf, binary.LittleEndian, &devicePath)
+		output+= "UEFI_IMAGE_LOAD_EVENT {\n"
+		output+= "ImageLocationInMemory: "
+		output += fmt.Sprintf("%x", imageLocationInMemory)
+		output+= "\nImageLengthInMemory: "
+		output+=strconv.Itoa(int(imageLengthInMemory)) //todo avoid casting to int
+		output+= "\nImageLinkTimeAddress: "
+		output+=strconv.Itoa(int(imageLinkTimeAddress)) //todo avoid casting to int
+		output+= "\nLengthOfDevicePath: "
+		output+=strconv.Itoa(int(lengthOfDevicePath)) //todo avoid casting to int
+		output+= "\nDevicePath: "
+		// runes := utf8.Decode(devicePath)
+		output+= hex.EncodeToString(devicePath)
+		output+= "\n}\n"
+	}
+
+	return output
+}
+
+func unsafetsr(UEFI_PHYSICAL_ADDRESS UEFI_PHYSICAL_ADDRESS) {
+	panic("unimplemented")
+}
+
+//TODO to be finished
+type UEFI_CONFIGURATION_TABLE struct{
+	EFI_GUID0 uint64
+	EFI_GUID1 uint64
+}
+
+type UEFI_HANDOFF_TABLE_POINTERS struct{
+	NumberOfTables uint64
+	
+}
+
+// func interpretAdditionalInformationUEFI_HANDOFFTABLE_POINTERS(uint8Array []uint8) string{return }
 
 func Test_parseBiosMeasurements(t *testing.T) {
 	type args struct {
@@ -60,14 +194,21 @@ func Test_parseBiosMeasurements(t *testing.T) {
 				return
 			}
 			for _, value := range attestationreport{
-				logrus.Println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+convertUint8ArrayToString(value.AdditionInfo))	
+				if value.Name == "EV_EFI_BOOT_SERVICES_APPLICATION"{
+					logrus.Println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretAdditionalInformationUEFI_IMAGE_LOAD_EVENT(value.AdditionInfo))	
+				} else if (value.Name == "EV_EFI_VARIABLE_DRIVER_CONFIG"){
+					//handle differently for printing the data interpreted as UEFI_VARIABLE_DATA
+					logrus.Println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretAdditionalInformationUEFI_VARIABLE_DATA(value.AdditionInfo))	
+				}else{
+					logrus.Println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretUint8ArrayAsString(value.AdditionInfo))	
+				}
 			}
 		})
 	}
 }
 
 var (
-	// BinaryBiosMeasurements contains a sample output of the file
+	// BinaryBiosMeasurements contains a sample output of te file
 	// /sys/kernel/security/tpm0/binary_bios_measurements for
 	// unit testing
 	BinaryBiosMeasurements = []byte{
