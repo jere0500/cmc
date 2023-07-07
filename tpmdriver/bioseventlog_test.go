@@ -43,6 +43,19 @@ func interpretUint8ArrayAsString(uint8Array []uint8) string {
 	return result
 }
 
+
+func uint64ToString(value uint64) string {
+    bytes := make([]byte, 8)
+    for i := uint(0); i < 8; i++ {
+        bytes[i] = byte(value >> (i << 3))
+    }
+
+    // Convert the byte slice to a string
+    str := *(*string)(unsafe.Pointer(&bytes))
+
+    return str
+}
+
 //helping structure for parsing 
 type UEFI_VARIABLE_DATA struct{
 	VariableName0 uint64
@@ -64,8 +77,8 @@ func interpretAdditionalInformationUEFI_VARIABLE_DATA(uint8Array []uint8) string
 		var variableName0, variableName1, unicodeNameLength, variableDataLength uint64;	
 
 		//1. part: read binary data into variables
-		binary.Read(buf, binary.LittleEndian, &variableName0)
-		binary.Read(buf, binary.LittleEndian, &variableName1)
+		binary.Read(buf, binary.LittleEndian, &variableName1) //one then zero for LittleEndian order of the 128 Bit value
+		binary.Read(buf, binary.LittleEndian, &variableName0) 
 		binary.Read(buf, binary.LittleEndian, &unicodeNameLength)
 		binary.Read(buf, binary.LittleEndian, &variableDataLength)
 
@@ -98,7 +111,7 @@ func interpretAdditionalInformationUEFI_VARIABLE_DATA(uint8Array []uint8) string
 		runes := utf16.Decode(unicodeName)
 		output+= string(runes)
 		output+= "\nVariableData: "
-		output+= hex.EncodeToString(variableData)
+		output+= interpretUint8ArrayAsString(variableData)
 		output+= "\n}\n"
 	}
 
@@ -152,8 +165,119 @@ func interpretAdditionalInformationUEFI_IMAGE_LOAD_EVENT(uint8Array []uint8) str
 	return output
 }
 
-func unsafetsr(UEFI_PHYSICAL_ADDRESS UEFI_PHYSICAL_ADDRESS) {
-	panic("unimplemented")
+type GPTHeader struct{
+	Signature uint64 
+	Revision uint32
+	HeaderSize uint32
+	HeaderCRC32 uint32
+	Reserverd uint32
+	MyLBA uint64 
+	AlternativeLBA uint64 
+	FirstUsableLBA uint64 
+	LastUsableLBA uint64 
+	DiskGUID1 uint64
+	DiskGUID0 uint64
+	PartitionEntryLBA uint64 
+	NumberOfPartitionEntries uint32
+	SizeOfPartitionEntry uint32
+	PartitionEntryArrayCRC32 uint32
+	// Reserverd2 - null in the example
+}
+
+type GPTPartitionEntry struct{
+	PartitionTypeGUID1 uint64 	
+	PartitionTypeGUID0 uint64 	
+	UniquePartitionGUID1 uint64
+	UniquePartitionGUID0 uint64
+	StartingLBA uint64
+	EndingLBA uint64
+	Attributes uint64
+	ParitionName [36]uint16 //ParitionName in UTF16
+	//no reserved in the exmaple format
+}
+
+func interpretAdditionalInformationUEFI_GPT_DATA(uint8Array []uint8) string{
+	var output string
+	buf := bytes.NewBuffer(uint8Array)
+
+	//minimum lenght UEFI_PARTITION_TABLE_HEADER = 92 bytes 
+	for buf.Len()>= 92{ 
+
+		//reading the header
+		partitionTableHeader := GPTHeader{}
+		binary.Read(buf, binary.LittleEndian, &partitionTableHeader)
+
+		//priting the Header
+		output+= "UEFI_GPT_DATA {\n"
+		output+= "UEFI_PARTITION_TABLE_HEADER {\n"
+		output+= "Signature: "
+		output+= uint64ToString(partitionTableHeader.Signature) 
+		output+= "\nRevision: "
+		output += fmt.Sprintf("%x", partitionTableHeader.Revision)
+		output+= "\nHeaderSize: "
+		output+= strconv.Itoa(int(partitionTableHeader.HeaderSize)) //todo avoid casting to int
+		output+= "\nHeaderCRC32: "
+		output+= fmt.Sprintf("%x", partitionTableHeader.HeaderCRC32)
+		output+= "\nMyLBA: "
+		output+= fmt.Sprintf("%x", partitionTableHeader.MyLBA)
+		output+= "\nAlternateLBA: "
+		output+= fmt.Sprintf("%x", partitionTableHeader.AlternativeLBA)
+		output+= "\nFirstUsableLBA: "
+		output+= fmt.Sprintf("%x", partitionTableHeader.FirstUsableLBA)
+		output+= "\nLastUsableLBA: "
+		output+= fmt.Sprintf("%x", partitionTableHeader.LastUsableLBA)
+		output+= "\nDiskGUID: "
+		output+= fmt.Sprintf("%x", partitionTableHeader.DiskGUID0)
+		output+= fmt.Sprintf("%x", partitionTableHeader.DiskGUID1)
+		output+= "\nPartitionEntryLBA: "
+		output+= fmt.Sprintf("%x", partitionTableHeader.PartitionEntryLBA)
+		output+= "\nNumberOfPartitionEntries: "
+		output+=strconv.Itoa(int(partitionTableHeader.NumberOfPartitionEntries)) 
+		output+= "\nSizeOfPartitionEntry "
+		output+=strconv.Itoa(int(partitionTableHeader.SizeOfPartitionEntry)) 
+		output+= "\nPartitionEntryArrayCRC32: "
+		output+= fmt.Sprintf("%x", partitionTableHeader.PartitionEntryArrayCRC32)
+		output+= "\n}"
+
+		//print the number of Partitions
+
+		//reading the number of paritions
+		var numberOfPartitions uint64 
+		binary.Read(buf, binary.LittleEndian, &numberOfPartitions)
+
+		output+="\nnumberOfPartitions: "
+		output+=strconv.Itoa(int(numberOfPartitions)) 
+
+		//loop and read the data into GPT Parition Entries
+		gptPartitionEntries := make([]GPTPartitionEntry,numberOfPartitions)	
+		if(buf.Len()>= int(numberOfPartitions)*128){ //128 Bytes: min size of a GPT Partition Entry
+			binary.Read(buf, binary.LittleEndian, gptPartitionEntries)
+		}
+
+		//printing the Partitions
+		for _, value := range gptPartitionEntries{
+			output+= "\nUEFI_PARTITION_ENTRY {"
+			output+= "\nPartitionTypeGUID: "
+			output+= fmt.Sprintf("%x", value.PartitionTypeGUID0)
+			output+= fmt.Sprintf("%x", value.PartitionTypeGUID1)
+			output+= "\nUniquePartitionGUID: "
+			output+= fmt.Sprintf("%x", value.UniquePartitionGUID0)
+			output+= fmt.Sprintf("%x", value.UniquePartitionGUID1)
+			output+= "\nStartingLBA: "
+			output+= fmt.Sprintf("%x", value.StartingLBA)
+			output+= "\nEntingLBA: "
+			output+= fmt.Sprintf("%x", value.EndingLBA)
+			output+= "\nAttributes: "
+			output+= fmt.Sprintf("%x", value.Attributes)
+			output+= "\nParitionName: "
+			output+= string(utf16.Decode(value.ParitionName[:]))
+			output+= "\n}"
+		}	
+	
+
+		output+= "\n}\n"
+	}
+	return output
 }
 
 //TODO to be finished
@@ -194,13 +318,15 @@ func Test_parseBiosMeasurements(t *testing.T) {
 				return
 			}
 			for _, value := range attestationreport{
-				if value.Name == "EV_EFI_BOOT_SERVICES_APPLICATION"{
-					logrus.Println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretAdditionalInformationUEFI_IMAGE_LOAD_EVENT(value.AdditionInfo))	
-				} else if (value.Name == "EV_EFI_VARIABLE_DRIVER_CONFIG"){
+				if (value.Name == "EV_EFI_BOOT_SERVICES_APPLICATION" || value.Name == "EV_EFI_BOOT_SERVICES_DRIVER" || value.Name == "EV_EFI_RUNTIME_SERVICES_DRIVER"){
+					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretAdditionalInformationUEFI_IMAGE_LOAD_EVENT(value.AdditionInfo))	
+				} else if (value.Name == "EV_EFI_VARIABLE_DRIVER_CONFIG" || value.Name == "EV_EFI_VARIABLE_BOOT" || value.Name == "EV_EFI_VARIABLE_AUTHORITY"){
 					//handle differently for printing the data interpreted as UEFI_VARIABLE_DATA
-					logrus.Println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretAdditionalInformationUEFI_VARIABLE_DATA(value.AdditionInfo))	
-				}else{
-					logrus.Println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretUint8ArrayAsString(value.AdditionInfo))	
+					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretAdditionalInformationUEFI_VARIABLE_DATA(value.AdditionInfo))	
+				} else if (value.Name == "EV_EFI_GPT_EVENT"){
+					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretAdditionalInformationUEFI_GPT_DATA(value.AdditionInfo))	
+				} else {
+					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretUint8ArrayAsString(value.AdditionInfo))	
 				}
 			}
 		})

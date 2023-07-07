@@ -188,11 +188,6 @@ func parseBiosMeasurements(data []byte) ([]ar.ReferenceValue, error) {
 		eventData := make([]uint8, eventSize)
 		binary.Read(buf, binary.LittleEndian, &eventData)
 		
-		// // EV_EFI_VARIABLE_DRIVER_CONFIG entries are long in the example, therefore handle such entries different
-		// if(eventType = 0x80000001){
-		//
-		// }
-
 		//either Sha256 or Sha384 must be present
 		if !(len(sha384Digest)==SHA384_DIGEST_LEN || len(sha256Digest)==SHA256_DIGEST_LEN){
 			return nil, fmt.Errorf("no SHA256 or SHA384 in TCG event entry: %w", err)
