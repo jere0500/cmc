@@ -17,8 +17,10 @@ package tpmdriver
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/binary"
 	"encoding/hex"
+	// "encoding/pem"
 	"fmt"
 	"strconv"
 	"testing"
@@ -67,6 +69,8 @@ type UEFI_VARIABLE_DATA struct{
 }
 
 
+
+
 func interpretAdditionalInformationUEFI_VARIABLE_DATA(uint8Array []uint8) string{
 	var output string
 	buf := bytes.NewBuffer(uint8Array)
@@ -108,12 +112,69 @@ func interpretAdditionalInformationUEFI_VARIABLE_DATA(uint8Array []uint8) string
 		output+= "\nVariableDataLength: "
 		output+=strconv.Itoa(int(variableDataLength)) //todo avoid casting to int
 		output+= "\nUnicodeName: "
-		runes := utf16.Decode(unicodeName)
-		output+= string(runes)
-		output+= "\nVariableData: "
-		output+= interpretUint8ArrayAsString(variableData)
+		unicodeNameString := string(utf16.Decode(unicodeName))
+		output+= unicodeNameString
+		output+= "\nVariableData: \n"
+
+		// normally just print
+		// if unicode name == something, handle different
+		// if (unicodeNameString == "PK" || unicodeNameString == "KEK"){ //maybe more
+		// 		output += parseVariableData(variableData)			
+		// } else {
+		//
+		// 				output+= interpretUint8ArrayAsString(variableData)
+		// 		}
+		 				output+= hex.Dump(variableData)
 		output+= "\n}\n"
 	}
+
+	return output
+}
+
+
+// additional functions for parsing the varible Data
+func parseVariableData(variableData []uint8) string{
+	var output string
+
+	//convert to byte[]
+	byteData := make([]byte, len(variableData))
+	for i, b := range variableData {
+		byteData[i] = byte(b)
+	}
+
+	//useless, not pem encoded
+	// // Parse the certificate
+	// block, _ := pem.Decode(byteData)
+	// if block == nil {
+	// 	fmt.Println("Failed to decode PEM block")
+	// 	return output
+	// }
+
+	cert, err := x509.ParseCertificate(byteData)
+	if err != nil {
+		// fmt.Println("Failed to parse certificate:", err)
+		return "Failed to parse certificate"
+	}
+
+	output= "Certificate{\n"
+	output+= "\nSubject:"+ cert.Subject.CommonName
+	output+= "\nIssuer:"+ cert.Issuer.CommonName
+	output+= "\nSerial Number:"+ fmt.Sprint(cert.SerialNumber)
+	output+= "\nValidity Period:"+ fmt.Sprint(cert.NotBefore)+ "-"+ fmt.Sprint(cert.NotAfter)
+	output+= "\nSignature Algorithm:"+ fmt.Sprint(cert.SignatureAlgorithm)
+	output+= "\nPublic Key Algorithm:"+ fmt.Sprint(cert.PublicKeyAlgorithm)
+
+	output+= "\nSubject Alternative Names:"
+	for _, name := range cert.DNSNames {
+		output+= "\n    DNS:"+ name
+	}
+	for _, ip := range cert.IPAddresses {
+		output+= "\nd    IP:"+ ip.String()
+	}
+
+	// could add more data
+	// ...
+
 
 	return output
 }
@@ -213,7 +274,7 @@ func interpretAdditionalInformationUEFI_GPT_DATA(uint8Array []uint8) string{
 		output+= "Signature: "
 		output+= uint64ToString(partitionTableHeader.Signature) 
 		output+= "\nRevision: "
-		output += fmt.Sprintf("%x", partitionTableHeader.Revision)
+		output+= fmt.Sprintf("%x", partitionTableHeader.Revision)
 		output+= "\nHeaderSize: "
 		output+= strconv.Itoa(int(partitionTableHeader.HeaderSize)) //todo avoid casting to int
 		output+= "\nHeaderCRC32: "
@@ -325,8 +386,10 @@ func Test_parseBiosMeasurements(t *testing.T) {
 					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretAdditionalInformationUEFI_VARIABLE_DATA(value.AdditionInfo))	
 				} else if (value.Name == "EV_EFI_GPT_EVENT"){
 					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretAdditionalInformationUEFI_GPT_DATA(value.AdditionInfo))	
-				} else {
+				} else if(value.Name == "EV_IPL") {
 					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretUint8ArrayAsString(value.AdditionInfo))	
+				}else{
+					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", \n"+hex.Dump(value.AdditionInfo))	
 				}
 			}
 		})
