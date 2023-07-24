@@ -20,7 +20,6 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"encoding/hex"
-	"io"
 
 	// "encoding/pem"
 	"fmt"
@@ -38,7 +37,6 @@ type UEFI_PHYSICAL_ADDRESS uint64
 func interpretUint8ArrayAsString(uint8Array []uint8) string {
 	result := ""
 	for _, val := range uint8Array {
-		if val < 128 && (val > 27 || (val < 14 && val > 8))  {
 		if val < 128 && (val > 27 || (val < 14 && val > 8)) {
 			result += string(val)
 		} else {
@@ -47,7 +45,6 @@ func interpretUint8ArrayAsString(uint8Array []uint8) string {
 	}
 	return result
 }
-
 
 func uint64ToString(value uint64) string {
 	bytes := make([]byte, 8)
@@ -135,7 +132,6 @@ func interpretAdditionalInformationUEFI_VARIABLE_DATA(uint8Array []uint8) string
 	return output
 }
 
-
 type EFI_SIGNATURE_LIST_b struct {
 	EFI_GUID1           uint64
 	EFI_GUID0           uint64
@@ -156,9 +152,6 @@ func parseVariableDataEFISignatureList(variableData []uint8) string {
 		binary.Read(buf, binary.LittleEndian, &efi_SIGNATURE_LIST) //one then zero for LittleEndian order of the 128 Bit value
 		//TODO for now just interprete as X509 cert, and only expect one
 
-
-
-
 		output += "\nEFI_SIGNATURE_LIST {"
 		output += "\nUEFI_GUID: "
 		output += fmt.Sprintf("%016x%016x", efi_SIGNATURE_LIST.EFI_GUID0, efi_SIGNATURE_LIST.EFI_GUID1)
@@ -176,36 +169,44 @@ func parseVariableDataEFISignatureList(variableData []uint8) string {
 		//other half of the method: parsing the _EFI_SIGNATURE_DATA
 		//parse the GUID
 
-				//countes how often a certificate has been parsed
-				counter :=0
-				//2nd condition determines if SignatureList contains multiple Certificates
-				for(buf.Len()>=int(efi_SIGNATURE_LIST.SignatureSize) && int(efi_SIGNATURE_LIST.SignatureListSize)- counter * int(efi_SIGNATURE_LIST.SignatureSize) >= int(efi_SIGNATURE_LIST.SignatureSize)){
-						var SigOwner0,SigOwner1 uint64
-						binary.Read(buf, binary.LittleEndian, &SigOwner1) //8 Bytes
-						binary.Read(buf, binary.LittleEndian, &SigOwner0) //8 Bytes
+		//countes how often a certificate has been parsed
+		counter := 0
+		//2nd condition determines if SignatureList contains multiple Certificates
+		for buf.Len() >= int(efi_SIGNATURE_LIST.SignatureSize) && int(efi_SIGNATURE_LIST.SignatureListSize)-counter*int(efi_SIGNATURE_LIST.SignatureSize) >= int(efi_SIGNATURE_LIST.SignatureSize) {
+			var SigOwner0, SigOwner1 uint64
+			binary.Read(buf, binary.LittleEndian, &SigOwner1) //8 Bytes
+			binary.Read(buf, binary.LittleEndian, &SigOwner0) //8 Bytes
 
+			//create alternate buffer to prevent trailing data when parsing the certificate
+			x509size := int(efi_SIGNATURE_LIST.SignatureSize) - 16
 
-						//create alternate buffer to prevent trailing data when parsing the certificate
-						x509size := int(efi_SIGNATURE_LIST.SignatureSize) - 16
-						certBuf := make([]uint8, x509size)
-						binary.Read(buf, binary.LittleEndian, &certBuf)
+			//step could maybe be skipped
+			certBuf := make([]uint8, x509size)
+			binary.Read(buf, binary.LittleEndian, &certBuf)
 
-						outputX509 := parseVariableDataX509(certBuf) // SignatureSize - 16 Bytes
-						//need to skip the buffer by the correct size of buffer
-						// buf.Next(int(efi_SIGNATURE_LIST.SignatureSize) - 16)
+			//TODO needs a switch to test what kind of Signature will be read
 
+			var outputX509 string
+			switch efi_SIGNATURE_LIST.EFI_GUID1 {
+			case 0x4aa794e4a5c059a1:
+				outputX509 = parseVariableDataX509_GUID(certBuf) // SignatureSize - 16 Bytes
+			case 0x4092504cc1c41626:
+				outputX509 = parseVariableDataSHA256_GUID(certBuf)
+			}
 
-						output += "{\nSignatureOwner: "+fmt.Sprintf("%x%x", SigOwner0, SigOwner1)
-						output += outputX509
-						counter++
-				}
+			// outputX509 := parseVariableDataX509_GUID(certBuf) // SignatureSize - 16 Bytes
+			//need to skip the buffer by the correct size of buffer
+			// buf.Next(int(efi_SIGNATURE_LIST.SignatureSize) - 16)
 
+			output += "{\nSignatureOwner: " + fmt.Sprintf("%016x%016x", SigOwner0, SigOwner1)
+			output += outputX509 + "\n}"
+			counter++
+		}
 
 		output += "}\n"
 	}
 	return output
 }
-
 
 // additional functions for parsing the varible Data
 func parseVariableDataX509_GUID(variableData []uint8) string {
@@ -224,7 +225,6 @@ func parseVariableDataX509_GUID(variableData []uint8) string {
 	// 	fmt.Println("Failed to decode PEM block")
 	// 	return output
 	// }
-
 
 	cert, err := x509.ParseCertificate(variableData)
 	if err != nil {
@@ -245,10 +245,8 @@ func parseVariableDataX509_GUID(variableData []uint8) string {
 		return "\n" + hex.Dump(variableData)
 	}
 
-
 	// return "x"
 	//try 2 with flipped byte order
-	
 
 	output += "\nCertificate{"
 	output += "\nSubject:" + cert.Subject.CommonName
@@ -270,37 +268,54 @@ func parseVariableDataX509_GUID(variableData []uint8) string {
 	// could add more data
 	// ...
 
+	return output
+}
+
+func parseVariableDataSHA256_GUID(variableData []uint8) string {
+	var output string
+	dataBuf := bytes.NewBuffer(variableData)
+
+	//1. Variable GUID (16 Byte)
+	//2. Sha256 (64 Byte)
+	var sha2560, sha2561, sha2562, sha2563 uint64
+	binary.Read(dataBuf, binary.LittleEndian, &sha2563)
+	binary.Read(dataBuf, binary.LittleEndian, &sha2562)
+	binary.Read(dataBuf, binary.LittleEndian, &sha2561)
+	binary.Read(dataBuf, binary.LittleEndian, &sha2560)
+	// output= "\nSHA256_GUID{"
+	// output+= fmt.Sprintf("\nSHA256_GUID: %x%x", guid0, guid1)
+	output += fmt.Sprintf("\nSHA256: %016x%016x%016x%016x", sha2560, sha2561, sha2562, sha2563) //0 and 1 is somehow emtpy
+	// output+= fmt.Sprintf("%x%x"%x%x \n}\n)
+	// output += fmt.Sprintf("%x%x", efi_SIGNATURE_LIST.EFI_GUID0, efi_SIGNATURE_LIST.EFI_GUID1)
 
 	return output
 }
-func convertByteOrder(src *bytes.Buffer, srcOrder binary.ByteOrder, destOrder binary.ByteOrder) *bytes.Buffer {
-	// Create a new buffer to store the converted data
-	dest := new(bytes.Buffer)
 
-	// Loop through the source buffer and convert each data element
-	for {
-		var value uint8
-		err := binary.Read(src, srcOrder, &value)
-		if err != nil {
-			if err == io.EOF {
-				// End of buffer reached, stop the loop
-				break
-			}
-			// Handle any other error that might occur
-			panic(err)
-		}
-
-		// Convert the value to the destination byte order
-		err = binary.Write(dest, destOrder, value)
-		if err != nil {
-			// Handle any error that might occur during writing
-			panic(err)
-		}
-	}
-
-	return dest
-}
-
+// currently unrequired
+// func convertByteOrder(src *bytes.Buffer, srcOrder binary.ByteOrder, destOrder binary.ByteOrder) *bytes.Buffer {
+// 	// Create a new buffer to store the converted data
+// 	dest := new(bytes.Buffer)
+//
+// 	// Loop through the source buffer and convert each data element
+// 	for {
+// 		var value uint8
+// 		err := binary.Read(src, srcOrder, &value)
+// 		if err != nil {
+// 			if err == io.EOF {
+// 				// End of buffer reached, stop the loop
+// 				break
+// 			}
+// 			// Handle any other error that might occur
+// 			panic(err)
+// 		}
+//
+// 		// Convert the value to the destination byte order
+// 		err = binary.Write(dest, destOrder, value)
+// 		if err != nil {
+// 			// Handle any error that might occur during writing
+// 			panic(err)
+// 		}
+// 	}
 //
 // 	return dest
 // }
