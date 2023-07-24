@@ -39,6 +39,7 @@ func interpretUint8ArrayAsString(uint8Array []uint8) string {
 	result := ""
 	for _, val := range uint8Array {
 		if val < 128 && (val > 27 || (val < 14 && val > 8))  {
+		if val < 128 && (val > 27 || (val < 14 && val > 8)) {
 			result += string(val)
 		} else {
 			result += "."
@@ -49,55 +50,52 @@ func interpretUint8ArrayAsString(uint8Array []uint8) string {
 
 
 func uint64ToString(value uint64) string {
-    bytes := make([]byte, 8)
-    for i := uint(0); i < 8; i++ {
-        bytes[i] = byte(value >> (i << 3))
-    }
+	bytes := make([]byte, 8)
+	for i := uint(0); i < 8; i++ {
+		bytes[i] = byte(value >> (i << 3))
+	}
 
-    // Convert the byte slice to a string
-    str := *(*string)(unsafe.Pointer(&bytes))
+	// Convert the byte slice to a string
+	str := *(*string)(unsafe.Pointer(&bytes))
 
-    return str
+	return str
 }
 
-//helping structure for parsing 
-type UEFI_VARIABLE_DATA struct{
-	VariableName0 uint64
-	VariableName1 uint64 //for two uint64, because the GUID is 16 Byte long = 128 Bit
-	UnicodeNameLength uint64
+// helping structure for parsing
+type UEFI_VARIABLE_DATA struct {
+	VariableName0      uint64
+	VariableName1      uint64 //for two uint64, because the GUID is 16 Byte long = 128 Bit
+	UnicodeNameLength  uint64
 	VariableDataLength uint64
-	UnicodeName []uint16 //interpreted as Unicode-char16
-	VariableData []int8
+	UnicodeName        []uint16 //interpreted as Unicode-char16
+	VariableData       []int8
 }
 
-
-
-
-func interpretAdditionalInformationUEFI_VARIABLE_DATA(uint8Array []uint8) string{
+func interpretAdditionalInformationUEFI_VARIABLE_DATA(uint8Array []uint8) string {
 	var output string
 	buf := bytes.NewBuffer(uint8Array)
 
 	//minimum lenght 16+8+8=32 bytes
-	for buf.Len()>=32{ 
+	for buf.Len() >= 32 {
 		//TODO checks for not reading to much
-		var variableName0, variableName1, unicodeNameLength, variableDataLength uint64;	
+		var variableName0, variableName1, unicodeNameLength, variableDataLength uint64
 
 		//1. part: read binary data into variables
 		binary.Read(buf, binary.LittleEndian, &variableName1) //one then zero for LittleEndian order of the 128 Bit value
-		binary.Read(buf, binary.LittleEndian, &variableName0) 
+		binary.Read(buf, binary.LittleEndian, &variableName0)
 		binary.Read(buf, binary.LittleEndian, &unicodeNameLength)
 		binary.Read(buf, binary.LittleEndian, &variableDataLength)
 
 		//read the amount of data into the []data fields
-		
-		if buf.Len()<2*int(unicodeNameLength){
+
+		if buf.Len() < 2*int(unicodeNameLength) {
 			//just stop reading
 			return output
 		}
-		unicodeName := make([]uint16, unicodeNameLength)	
+		unicodeName := make([]uint16, unicodeNameLength)
 		binary.Read(buf, binary.LittleEndian, &unicodeName)
 
-		if buf.Len()<int(variableDataLength){
+		if buf.Len() < int(variableDataLength) {
 			//just stop reading
 			return output
 		}
@@ -105,76 +103,76 @@ func interpretAdditionalInformationUEFI_VARIABLE_DATA(uint8Array []uint8) string
 		binary.Read(buf, binary.LittleEndian, &variableData)
 
 		//2. part: parse variables as Strings
-		output+= "UEFI_VARIABLE_DATA {\n"
-		output+= "VariableName: "
-		output += fmt.Sprintf("%x", variableName0)
-		output += fmt.Sprintf("%x", variableName1)
-		output+= "\nUnicodeNameLength: "
-		output+=strconv.Itoa(int(unicodeNameLength)) //todo avoid casting to int
-		output+= "\nVariableDataLength: "
-		output+=strconv.Itoa(int(variableDataLength)) //todo avoid casting to int
-		output+= "\nUnicodeName: "
+		output += "UEFI_VARIABLE_DATA {\n"
+		output += "VariableName: "
+		output += fmt.Sprintf("%016x", variableName0)
+		output += fmt.Sprintf("%016x", variableName1)
+		output += "\nUnicodeNameLength: "
+		output += strconv.Itoa(int(unicodeNameLength)) //todo avoid casting to int
+		output += "\nVariableDataLength: "
+		output += strconv.Itoa(int(variableDataLength)) //todo avoid casting to int
+		output += "\nUnicodeName: "
 		unicodeNameString := string(utf16.Decode(unicodeName))
-		output+= unicodeNameString
-		output+= "\nVariableData: \n"
+		output += unicodeNameString
+		output += "\nVariableData: \n"
 
 		// normally just print
 		// if unicode name == something, handle different
-		if (unicodeNameString == "PK" || unicodeNameString == "KEK"|| unicodeNameString == "db"){ //maybe more
-				output += parseVariableDataEFISignatureList(variableData)			
-		} else{ 
-		// } else{
-		//
-		// 				output+= interpretUint8ArrayAsString(variableData)
-		// 		}
+		if unicodeNameString == "PK" || unicodeNameString == "KEK" || unicodeNameString == "db" || unicodeNameString == "dbx" { //maybe more
+			output += parseVariableDataEFISignatureList(variableData)
+		} else {
+			// } else{
+			//
+			// 				output+= interpretUint8ArrayAsString(variableData)
+			// 		}
 
-		output+= hex.Dump(variableData)
-				}
-		output+= "\n}\n"
+			output += hex.Dump(variableData)
+		}
+		// output+= hex.Dump(variableData)
+		output += "\n}\n"
 	}
 
 	return output
 }
 
 
-type EFI_SIGNATURE_LIST_b struct{
-	EFI_GUID1 uint64
-	EFI_GUID0 uint64
-	SignatureListSize uint32
+type EFI_SIGNATURE_LIST_b struct {
+	EFI_GUID1           uint64
+	EFI_GUID0           uint64
+	SignatureListSize   uint32
 	SignatureHeaderSize uint32 //is often just 0s, could be verified
-	SignatureSize uint32 //size of each signature
+	SignatureSize       uint32 //size of each signature
 	// UINT8 SignatureHeader [SignatureHeaderSize]; -- need to be parsed
 	// EFI_SIGNATURE_DATA Signatures [__][SignatureSize]; -- signatures can be multiple
 }
 
-func parseVariableDataEFISignatureList(variableData []uint8) string{
-	
+func parseVariableDataEFISignatureList(variableData []uint8) string {
+
 	var output string
 	buf := bytes.NewBuffer(variableData)
 	efi_SIGNATURE_LIST := EFI_SIGNATURE_LIST_b{}
 
-	//minimum lenght 16+8+8=32 bytes
-	for buf.Len()>=28{
+	for buf.Len() >= 28 {
 		binary.Read(buf, binary.LittleEndian, &efi_SIGNATURE_LIST) //one then zero for LittleEndian order of the 128 Bit value
 		//TODO for now just interprete as X509 cert, and only expect one
 
 
 
 
-		output+= "\nEFI_SIGNATURE_LIST {"
-		output+= "\nUEFI_GUID: "
-		output += fmt.Sprintf("%x%x", efi_SIGNATURE_LIST.EFI_GUID0, efi_SIGNATURE_LIST.EFI_GUID1)
-		output+= "\nSignatureListSize: "
+		output += "\nEFI_SIGNATURE_LIST {"
+		output += "\nUEFI_GUID: "
+		output += fmt.Sprintf("%016x%016x", efi_SIGNATURE_LIST.EFI_GUID0, efi_SIGNATURE_LIST.EFI_GUID1)
+		output += "\nSignatureListSize: "
 		output += fmt.Sprintf("%d", efi_SIGNATURE_LIST.SignatureListSize)
-		output+= "\nSignatureHeaderSize: "
+		output += "\nSignatureHeaderSize: "
 		output += fmt.Sprintf("%d", efi_SIGNATURE_LIST.SignatureHeaderSize)
-		output+= "\nSignatureSize: "
+		output += "\nSignatureSize: "
 		output += fmt.Sprintf("%d", efi_SIGNATURE_LIST.SignatureSize)
-		output+= "\n"
+		output += "\n"
 
 		//TODO also support SignatureHeader
 
-		//TODO also needs to be able to parse 
+		//TODO also needs to be able to parse
 		//other half of the method: parsing the _EFI_SIGNATURE_DATA
 		//parse the GUID
 
@@ -203,14 +201,14 @@ func parseVariableDataEFISignatureList(variableData []uint8) string{
 				}
 
 
-output+= "}\n"
+		output += "}\n"
 	}
 	return output
 }
 
 
 // additional functions for parsing the varible Data
-func parseVariableDataX509(variableData []uint8) string{
+func parseVariableDataX509_GUID(variableData []uint8) string {
 	var output string
 	//
 	// //convert to byte[]
@@ -230,18 +228,18 @@ func parseVariableDataX509(variableData []uint8) string{
 
 	cert, err := x509.ParseCertificate(variableData)
 	if err != nil {
-		 fmt.Println("Failed to parse certificate:", err)
+		fmt.Println("Failed to parse certificate:", err)
 		// Create a buffer using the little-endian byte slice
 
 		//unrequired
-		// buf := bytes.NewBuffer(variableData) 
+		// buf := bytes.NewBuffer(variableData)
 
 		// // Convert the entire buffer to big-endian
 		// bigEndianBuffer := convertByteOrder(buf, binary.LittleEndian, binary.BigEndian)
 		// cert2, err := x509.ParseCertificate(bigEndianBuffer.Bytes())
 		// if err != nil {
 		// 	 fmt.Println("Failed to parse certificate:", err)
-		// 	return "x\n" 
+		// 	return "x\n"
 		// }
 		// cert = cert2
 		return "\n" + hex.Dump(variableData)
@@ -252,22 +250,22 @@ func parseVariableDataX509(variableData []uint8) string{
 	//try 2 with flipped byte order
 	
 
-	output+= "\nCertificate{"
-	output+= "\nSubject:"+ cert.Subject.CommonName
-	output+= "\nIssuer:"+ cert.Issuer.CommonName
-	output+= "\nSerial Number:"+ fmt.Sprint(cert.SerialNumber)
-	output+= "\nValidity Period:"+ fmt.Sprint(cert.NotBefore)+ "-"+ fmt.Sprint(cert.NotAfter)
-	output+= "\nSignature Algorithm:"+ fmt.Sprint(cert.SignatureAlgorithm)
-	output+= "\nPublic Key Algorithm:"+ fmt.Sprint(cert.PublicKeyAlgorithm)
+	output += "\nCertificate{"
+	output += "\nSubject:" + cert.Subject.CommonName
+	output += "\nIssuer:" + cert.Issuer.CommonName
+	output += "\nSerial Number:" + fmt.Sprint(cert.SerialNumber)
+	output += "\nValidity Period:" + fmt.Sprint(cert.NotBefore) + "-" + fmt.Sprint(cert.NotAfter)
+	output += "\nSignature Algorithm:" + fmt.Sprint(cert.SignatureAlgorithm)
+	output += "\nPublic Key Algorithm:" + fmt.Sprint(cert.PublicKeyAlgorithm)
 
-	output+= "\nSubject Alternative Names:"
+	output += "\nSubject Alternative Names:"
 	for _, name := range cert.DNSNames {
-		output+= "\n    DNS:"+ name
+		output += "\n    DNS:" + name
 	}
 	for _, ip := range cert.IPAddresses {
-		output+= "\nd    IP:"+ ip.String()
+		output += "\nd    IP:" + ip.String()
 	}
-	output+= "\n}"
+	output += "\n}"
 
 	// could add more data
 	// ...
@@ -303,20 +301,24 @@ func convertByteOrder(src *bytes.Buffer, srcOrder binary.ByteOrder, destOrder bi
 	return dest
 }
 
+//
+// 	return dest
+// }
 
-type UEFI_IMAGE_LOAD_EVENT struct{
+type UEFI_IMAGE_LOAD_EVENT struct {
 	ImageLocationInMemory UEFI_PHYSICAL_ADDRESS
-	ImageLengthInMemory uint64
-	ImageLinkTimeAddress uint64
-	LengthOfDevicePath uint64
-	DevicePath []uint16 //as far as understood is interpreted as utf16 char[]
+	ImageLengthInMemory   uint64
+	ImageLinkTimeAddress  uint64
+	LengthOfDevicePath    uint64
+	DevicePath            []uint16 //as far as understood is interpreted as utf16 char[]
 }
-func interpretAdditionalInformationUEFI_IMAGE_LOAD_EVENT(uint8Array []uint8) string{
+
+func interpretAdditionalInformationUEFI_IMAGE_LOAD_EVENT(uint8Array []uint8) string {
 	var output string
 	buf := bytes.NewBuffer(uint8Array)
 
 	//minimum lenght sizeof UEFI_PHYSICAL_ADDRESS+8+8+8=~32 bytes
-	for buf.Len()>=24+int(unsafe.Sizeof(UEFI_PHYSICAL_ADDRESS(0))){ 
+	for buf.Len() >= 24+int(unsafe.Sizeof(UEFI_PHYSICAL_ADDRESS(0))) {
 		var imageLengthInMemory, imageLinkTimeAddress, lengthOfDevicePath uint64
 		var imageLocationInMemory UEFI_PHYSICAL_ADDRESS
 
@@ -325,156 +327,153 @@ func interpretAdditionalInformationUEFI_IMAGE_LOAD_EVENT(uint8Array []uint8) str
 		binary.Read(buf, binary.LittleEndian, &imageLinkTimeAddress)
 		binary.Read(buf, binary.LittleEndian, &lengthOfDevicePath)
 
-		
-		if buf.Len()<int(lengthOfDevicePath){
+		if buf.Len() < int(lengthOfDevicePath) {
 			return output
 		}
 
 		//device path can't be easily specified, because of the high number of different types
-		devicePath :=make([]uint8, lengthOfDevicePath)
+		devicePath := make([]uint8, lengthOfDevicePath)
 		binary.Read(buf, binary.LittleEndian, &devicePath)
-		output+= "UEFI_IMAGE_LOAD_EVENT {\n"
-		output+= "ImageLocationInMemory: "
-		output += fmt.Sprintf("%x", imageLocationInMemory)
-		output+= "\nImageLengthInMemory: "
-		output+=strconv.Itoa(int(imageLengthInMemory)) //todo avoid casting to int
-		output+= "\nImageLinkTimeAddress: "
-		output+=strconv.Itoa(int(imageLinkTimeAddress)) //todo avoid casting to int
-		output+= "\nLengthOfDevicePath: "
-		output+=strconv.Itoa(int(lengthOfDevicePath)) //todo avoid casting to int
-		output+= "\nDevicePath: "
+		output += "UEFI_IMAGE_LOAD_EVENT {\n"
+		output += "ImageLocationInMemory: "
+		output += fmt.Sprintf("%16x", imageLocationInMemory)
+		output += "\nImageLengthInMemory: "
+		output += strconv.Itoa(int(imageLengthInMemory)) //todo avoid casting to int
+		output += "\nImageLinkTimeAddress: "
+		output += strconv.Itoa(int(imageLinkTimeAddress)) //todo avoid casting to int
+		output += "\nLengthOfDevicePath: "
+		output += strconv.Itoa(int(lengthOfDevicePath)) //todo avoid casting to int
+		output += "\nDevicePath: "
 		// runes := utf8.Decode(devicePath)
-		output+= hex.EncodeToString(devicePath)
-		output+= "\n}\n"
+		output += hex.EncodeToString(devicePath)
+		output += "\n}\n"
 	}
 
 	return output
 }
 
-type GPTHeader struct{
-	Signature uint64 
-	Revision uint32
-	HeaderSize uint32
-	HeaderCRC32 uint32
-	Reserverd uint32
-	MyLBA uint64 
-	AlternativeLBA uint64 
-	FirstUsableLBA uint64 
-	LastUsableLBA uint64 
-	DiskGUID1 uint64
-	DiskGUID0 uint64
-	PartitionEntryLBA uint64 
+type GPTHeader struct {
+	Signature                uint64
+	Revision                 uint32
+	HeaderSize               uint32
+	HeaderCRC32              uint32
+	Reserverd                uint32
+	MyLBA                    uint64
+	AlternativeLBA           uint64
+	FirstUsableLBA           uint64
+	LastUsableLBA            uint64
+	DiskGUID1                uint64
+	DiskGUID0                uint64
+	PartitionEntryLBA        uint64
 	NumberOfPartitionEntries uint32
-	SizeOfPartitionEntry uint32
+	SizeOfPartitionEntry     uint32
 	PartitionEntryArrayCRC32 uint32
 	// Reserverd2 - null in the example
 }
 
-type GPTPartitionEntry struct{
-	PartitionTypeGUID1 uint64 	
-	PartitionTypeGUID0 uint64 	
+type GPTPartitionEntry struct {
+	PartitionTypeGUID1   uint64
+	PartitionTypeGUID0   uint64
 	UniquePartitionGUID1 uint64
 	UniquePartitionGUID0 uint64
-	StartingLBA uint64
-	EndingLBA uint64
-	Attributes uint64
-	ParitionName [36]uint16 //ParitionName in UTF16
+	StartingLBA          uint64
+	EndingLBA            uint64
+	Attributes           uint64
+	ParitionName         [36]uint16 //ParitionName in UTF16
 	//no reserved in the exmaple format
 }
 
-func interpretAdditionalInformationUEFI_GPT_DATA(uint8Array []uint8) string{
+func interpretAdditionalInformationUEFI_GPT_DATA(uint8Array []uint8) string {
 	var output string
 	buf := bytes.NewBuffer(uint8Array)
 
-	//minimum lenght UEFI_PARTITION_TABLE_HEADER = 92 bytes 
-	for buf.Len()>= 92{ 
+	//minimum lenght UEFI_PARTITION_TABLE_HEADER = 92 bytes
+	for buf.Len() >= 92 {
 
 		//reading the header
 		partitionTableHeader := GPTHeader{}
 		binary.Read(buf, binary.LittleEndian, &partitionTableHeader)
 
 		//priting the Header
-		output+= "UEFI_GPT_DATA {\n"
-		output+= "UEFI_PARTITION_TABLE_HEADER {\n"
-		output+= "Signature: "
-		output+= uint64ToString(partitionTableHeader.Signature) 
-		output+= "\nRevision: "
-		output+= fmt.Sprintf("%x", partitionTableHeader.Revision)
-		output+= "\nHeaderSize: "
-		output+= strconv.Itoa(int(partitionTableHeader.HeaderSize)) //todo avoid casting to int
-		output+= "\nHeaderCRC32: "
-		output+= fmt.Sprintf("%x", partitionTableHeader.HeaderCRC32)
-		output+= "\nMyLBA: "
-		output+= fmt.Sprintf("%x", partitionTableHeader.MyLBA)
-		output+= "\nAlternateLBA: "
-		output+= fmt.Sprintf("%x", partitionTableHeader.AlternativeLBA)
-		output+= "\nFirstUsableLBA: "
-		output+= fmt.Sprintf("%x", partitionTableHeader.FirstUsableLBA)
-		output+= "\nLastUsableLBA: "
-		output+= fmt.Sprintf("%x", partitionTableHeader.LastUsableLBA)
-		output+= "\nDiskGUID: "
-		output+= fmt.Sprintf("%x", partitionTableHeader.DiskGUID0)
-		output+= fmt.Sprintf("%x", partitionTableHeader.DiskGUID1)
-		output+= "\nPartitionEntryLBA: "
-		output+= fmt.Sprintf("%x", partitionTableHeader.PartitionEntryLBA)
-		output+= "\nNumberOfPartitionEntries: "
-		output+=strconv.Itoa(int(partitionTableHeader.NumberOfPartitionEntries)) 
-		output+= "\nSizeOfPartitionEntry "
-		output+=strconv.Itoa(int(partitionTableHeader.SizeOfPartitionEntry)) 
-		output+= "\nPartitionEntryArrayCRC32: "
-		output+= fmt.Sprintf("%x", partitionTableHeader.PartitionEntryArrayCRC32)
-		output+= "\n}"
+		output += "UEFI_GPT_DATA {\n"
+		output += "UEFI_PARTITION_TABLE_HEADER {\n"
+		output += "Signature: "
+		output += uint64ToString(partitionTableHeader.Signature)
+		output += "\nRevision: "
+		output += fmt.Sprintf("%08x", partitionTableHeader.Revision)
+		output += "\nHeaderSize: "
+		output += strconv.Itoa(int(partitionTableHeader.HeaderSize)) //todo avoid casting to int
+		output += "\nHeaderCRC32: "
+		output += fmt.Sprintf("%08x", partitionTableHeader.HeaderCRC32)
+		output += "\nMyLBA: "
+		output += fmt.Sprintf("%016x", partitionTableHeader.MyLBA)
+		output += "\nAlternateLBA: "
+		output += fmt.Sprintf("%016x", partitionTableHeader.AlternativeLBA)
+		output += "\nFirstUsableLBA: "
+		output += fmt.Sprintf("%016x", partitionTableHeader.FirstUsableLBA)
+		output += "\nLastUsableLBA: "
+		output += fmt.Sprintf("%016x", partitionTableHeader.LastUsableLBA)
+		output += "\nDiskGUID: "
+		output += fmt.Sprintf("%016x", partitionTableHeader.DiskGUID0)
+		output += fmt.Sprintf("%016x", partitionTableHeader.DiskGUID1)
+		output += "\nPartitionEntryLBA: "
+		output += fmt.Sprintf("%016x", partitionTableHeader.PartitionEntryLBA)
+		output += "\nNumberOfPartitionEntries: "
+		output += strconv.Itoa(int(partitionTableHeader.NumberOfPartitionEntries))
+		output += "\nSizeOfPartitionEntry "
+		output += strconv.Itoa(int(partitionTableHeader.SizeOfPartitionEntry))
+		output += "\nPartitionEntryArrayCRC32: "
+		output += fmt.Sprintf("%08x", partitionTableHeader.PartitionEntryArrayCRC32)
+		output += "\n}"
 
 		//print the number of Partitions
 
 		//reading the number of paritions
-		var numberOfPartitions uint64 
+		var numberOfPartitions uint64
 		binary.Read(buf, binary.LittleEndian, &numberOfPartitions)
 
-		output+="\nnumberOfPartitions: "
-		output+=strconv.Itoa(int(numberOfPartitions)) 
+		output += "\nnumberOfPartitions: "
+		output += strconv.Itoa(int(numberOfPartitions))
 
 		//loop and read the data into GPT Parition Entries
-		gptPartitionEntries := make([]GPTPartitionEntry,numberOfPartitions)	
-		if(buf.Len()>= int(numberOfPartitions)*128){ //128 Bytes: min size of a GPT Partition Entry
+		gptPartitionEntries := make([]GPTPartitionEntry, numberOfPartitions)
+		if buf.Len() >= int(numberOfPartitions)*128 { //128 Bytes: min size of a GPT Partition Entry
 			binary.Read(buf, binary.LittleEndian, gptPartitionEntries)
 		}
 
 		//printing the Partitions
-		for _, value := range gptPartitionEntries{
-			output+= "\nUEFI_PARTITION_ENTRY {"
-			output+= "\nPartitionTypeGUID: "
-			output+= fmt.Sprintf("%x", value.PartitionTypeGUID0)
-			output+= fmt.Sprintf("%x", value.PartitionTypeGUID1)
-			output+= "\nUniquePartitionGUID: "
-			output+= fmt.Sprintf("%x", value.UniquePartitionGUID0)
-			output+= fmt.Sprintf("%x", value.UniquePartitionGUID1)
-			output+= "\nStartingLBA: "
-			output+= fmt.Sprintf("%x", value.StartingLBA)
-			output+= "\nEntingLBA: "
-			output+= fmt.Sprintf("%x", value.EndingLBA)
-			output+= "\nAttributes: "
-			output+= fmt.Sprintf("%x", value.Attributes)
-			output+= "\nParitionName: "
-			output+= string(utf16.Decode(value.ParitionName[:]))
-			output+= "\n}"
-		}	
-	
+		for _, value := range gptPartitionEntries {
+			output += "\nUEFI_PARTITION_ENTRY {"
+			output += "\nPartitionTypeGUID: "
+			output += fmt.Sprintf("%016x", value.PartitionTypeGUID0)
+			output += fmt.Sprintf("%016x", value.PartitionTypeGUID1)
+			output += "\nUniquePartitionGUID: "
+			output += fmt.Sprintf("%016x", value.UniquePartitionGUID0)
+			output += fmt.Sprintf("%016x", value.UniquePartitionGUID1)
+			output += "\nStartingLBA: "
+			output += fmt.Sprintf("%016x", value.StartingLBA)
+			output += "\nEntingLBA: "
+			output += fmt.Sprintf("%016x", value.EndingLBA)
+			output += "\nAttributes: "
+			output += fmt.Sprintf("%016x", value.Attributes)
+			output += "\nParitionName: "
+			output += string(utf16.Decode(value.ParitionName[:]))
+			output += "\n}"
+		}
 
-		output+= "\n}\n"
+		output += "\n}\n"
 	}
 	return output
 }
 
-//TODO to be finished
-type UEFI_CONFIGURATION_TABLE struct{
+// TODO to be finished
+type UEFI_CONFIGURATION_TABLE struct {
 	EFI_GUID0 uint64
 	EFI_GUID1 uint64
 }
 
-type UEFI_HANDOFF_TABLE_POINTERS struct{
+type UEFI_HANDOFF_TABLE_POINTERS struct {
 	NumberOfTables uint64
-	
 }
 
 // func interpretAdditionalInformationUEFI_HANDOFFTABLE_POINTERS(uint8Array []uint8) string{return }
@@ -499,22 +498,22 @@ func Test_parseBiosMeasurements(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			attestationreport, err := parseBiosMeasurements(tt.args.data)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseBiosMeasurements() error = %v, wantErr %v", err, tt.wantErr)					
+				t.Errorf("parseBiosMeasurements() error = %v, wantErr %v", err, tt.wantErr)
 				//maybe print the return value of the BIOS Measurements
 				return
 			}
-			for _, value := range attestationreport{
-				if (value.Name == "EV_EFI_BOOT_SERVICES_APPLICATION" || value.Name == "EV_EFI_BOOT_SERVICES_DRIVER" || value.Name == "EV_EFI_RUNTIME_SERVICES_DRIVER"){
-					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretAdditionalInformationUEFI_IMAGE_LOAD_EVENT(value.AdditionInfo))	
-				} else if (value.Name == "EV_EFI_VARIABLE_DRIVER_CONFIG" || value.Name == "EV_EFI_VARIABLE_BOOT" || value.Name == "EV_EFI_VARIABLE_AUTHORITY"){
+			for _, value := range attestationreport {
+				if value.Name == "EV_EFI_BOOT_SERVICES_APPLICATION" || value.Name == "EV_EFI_BOOT_SERVICES_DRIVER" || value.Name == "EV_EFI_RUNTIME_SERVICES_DRIVER" {
+					println(value.Type + ", " + strconv.Itoa(*value.Pcr) + ", " + value.Name + ", " + hex.EncodeToString(value.Sha256) + ", " + interpretAdditionalInformationUEFI_IMAGE_LOAD_EVENT(value.AdditionInfo))
+				} else if value.Name == "EV_EFI_VARIABLE_DRIVER_CONFIG" || value.Name == "EV_EFI_VARIABLE_BOOT" || value.Name == "EV_EFI_VARIABLE_AUTHORITY" {
 					//handle differently for printing the data interpreted as UEFI_VARIABLE_DATA
-					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretAdditionalInformationUEFI_VARIABLE_DATA(value.AdditionInfo))	
-				} else if (value.Name == "EV_EFI_GPT_EVENT"){
-					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretAdditionalInformationUEFI_GPT_DATA(value.AdditionInfo))	
-				} else if(value.Name == "EV_IPL") {
-					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", "+interpretUint8ArrayAsString(value.AdditionInfo))	
-				}else{
-					println(value.Type+", "+strconv.Itoa(*value.Pcr)+", "+value.Name+", "+hex.EncodeToString(value.Sha256)+", \n"+hex.Dump(value.AdditionInfo))	
+					println(value.Type + ", " + strconv.Itoa(*value.Pcr) + ", " + value.Name + ", " + hex.EncodeToString(value.Sha256) + ", " + interpretAdditionalInformationUEFI_VARIABLE_DATA(value.AdditionInfo))
+				} else if value.Name == "EV_EFI_GPT_EVENT" {
+					println(value.Type + ", " + strconv.Itoa(*value.Pcr) + ", " + value.Name + ", " + hex.EncodeToString(value.Sha256) + ", " + interpretAdditionalInformationUEFI_GPT_DATA(value.AdditionInfo))
+				} else if value.Name == "EV_IPL" {
+					println(value.Type + ", " + strconv.Itoa(*value.Pcr) + ", " + value.Name + ", " + hex.EncodeToString(value.Sha256) + ", " + interpretUint8ArrayAsString(value.AdditionInfo))
+				} else {
+					println(value.Type + ", " + strconv.Itoa(*value.Pcr) + ", " + value.Name + ", " + hex.EncodeToString(value.Sha256) + ", \n" + hex.Dump(value.AdditionInfo))
 				}
 			}
 		})
