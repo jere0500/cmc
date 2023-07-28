@@ -180,13 +180,17 @@ type SnpDetails struct {
 // element of types 'SNP Reference Value', 'TPM Reference Value'
 // and 'SW Reference Value'
 type ReferenceValue struct {
-	Type   string      `json:"type" cbor:"0,keyasint"`
-	Sha256 HexByte     `json:"sha256,omitempty" cbor:"1,keyasint,omitempty"`
-	Sha384 HexByte     `json:"sha384,omitempty" cbor:"2,keyasint,omitempty"`
-	Name   string      `json:"name,omitempty" cbor:"3,keyasint,omitempty"`
-	Pcr    *int        `json:"pcr,omitempty" cbor:"4,keyasint,omitempty"`
-	Snp    *SnpDetails `json:"snp,omitempty" cbor:"5,keyasint,omitempty"`
-	AdditionInfo    []uint8
+	Type           string      `json:"type" cbor:"0,keyasint"`
+	Sha256         HexByte     `json:"sha256,omitempty" cbor:"1,keyasint,omitempty"`
+	Sha384         HexByte     `json:"sha384,omitempty" cbor:"2,keyasint,omitempty"`
+	Name           string      `json:"name,omitempty" cbor:"3,keyasint,omitempty"`
+	Pcr            *int        `json:"pcr,omitempty" cbor:"4,keyasint,omitempty"`
+	Snp            *SnpDetails `json:"snp,omitempty" cbor:"5,keyasint,omitempty"`
+
+	//additional values
+	AdditionalInfo []uint8      
+	Certifiactes  []x509.Certificate `json:"certificates,omitempty" cbor:"6,keyasint,omitempty"`
+	StringContent string `json:"stringContent,omitempty" cbor:"6,keyasint,omitempty"`
 }
 
 // AppDescription represents the attestation report

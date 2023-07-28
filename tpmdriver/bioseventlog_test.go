@@ -20,8 +20,6 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"encoding/hex"
-
-	// "encoding/pem"
 	"fmt"
 	"strconv"
 	"testing"
@@ -358,9 +356,9 @@ func interpretAdditionalInformationUEFI_IMAGE_LOAD_EVENT(uint8Array []uint8) str
 		output += strconv.Itoa(int(imageLinkTimeAddress)) //todo avoid casting to int
 		output += "\nLengthOfDevicePath: "
 		output += strconv.Itoa(int(lengthOfDevicePath)) //todo avoid casting to int
-		output += "\nDevicePath: "
+		output += "\nDevicePath:\n"
 		// runes := utf8.Decode(devicePath)
-		output += hex.EncodeToString(devicePath)
+		output += hex.Dump(devicePath)
 		output += "\n}\n"
 	}
 

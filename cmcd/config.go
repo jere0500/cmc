@@ -48,6 +48,7 @@ type config struct {
 	LogLevel       string   `json:"logLevel,omitempty"`
 	Storage        string   `json:"storage,omitempty"`
 	Cache          string   `json:"cache,omitempty"`
+	exMeasInfo     bool     `json:"exMeasInfo,omitempty"`
 
 	policyEngineSelect ar.PolicyEngineSelect
 	drivers            []ar.Driver
@@ -89,6 +90,7 @@ const (
 	logFlag          = "log"
 	storageFlag      = "storage"
 	cacheFlag        = "cache"
+	exMeasInfoFlag   = "exMeasInfo"
 )
 
 func getConfig() (*config, error) {
@@ -119,6 +121,8 @@ func getConfig() (*config, error) {
 		fmt.Sprintf("Possible logging: %v", strings.Join(maps.Keys(logLevels), ",")))
 	storage := flag.String(storageFlag, "", "Optional folder to store internal CMC data in")
 	cache := flag.String(cacheFlag, "", "Optional folder to cache metadata for offline backup")
+	exMeasInfo := flag.Bool(exMeasInfoFlag, false, "Indicates whether to include additional Measurement details in the Measurement and Verification log")
+	//TODO add options
 	flag.Parse()
 
 	// Create default configuration
@@ -180,6 +184,9 @@ func getConfig() (*config, error) {
 	}
 	if internal.FlagPassed(cacheFlag) {
 		c.Cache = *cache
+	}
+	if internal.FlagPassed(imaFlag) {
+		c.exMeasInfo = *exMeasInfo
 	}
 
 	// Configure the logger
@@ -272,6 +279,8 @@ func printConfig(c *config) {
 	log.Debugf("\tKey Config               : %v", c.KeyConfig)
 	log.Debugf("\tLogging Level            : %v", c.LogLevel)
 	log.Debugf("\tDrivers                  : %v", strings.Join(c.Drivers, ","))
+	log.Debugf("\textended Meas information: %v", c.exMeasInfo)
+	//TODO insert
 	if c.Storage != "" {
 		log.Debugf("\tInternal storage path    : %v", c.Storage)
 	}

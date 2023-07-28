@@ -193,7 +193,7 @@ func parseBiosMeasurements(data []byte) ([]ar.ReferenceValue, error) {
 		pcrP := int(pcrIndex)
 
 		//add to extends,
-		extends = append(extends, ar.ReferenceValue{Type: EVENT_TYPE, Sha256: sha256Digest, Sha384: sha384Digest, Name: eventName, Pcr: &pcrP, Snp: nil, AdditionInfo: eventData})
+		extends = append(extends, ar.ReferenceValue{Type: EVENT_TYPE, Sha256: sha256Digest, Sha384: sha384Digest, Name: eventName, Pcr: &pcrP, Snp: nil, AdditionalInfo: eventData})
 	}
 
 	return extends, nil
