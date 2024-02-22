@@ -39,7 +39,7 @@ type Listener struct {
 // Implementation of Accept() in net.Listener iface
 // Calls Accept of the net.Listnener and additionally performs remote attestation
 // after connection establishment before returning the connection
-func (ln Listener) Accept() (net.Conn, error) {
+func (ln Listener) Accept() (*Conn, error) {
 	// Accept TLS connection
 	conn, err := ln.Listener.Accept()
 	if err != nil {
@@ -87,7 +87,12 @@ func (ln Listener) Accept() (net.Conn, error) {
 
 	log.Info("Server-side aTLS connection complete")
 
-	return conn, nil
+	//wrapping the tls.Conn into attestedtls.Conn, allows reattestation
+	connWrapper := new(Conn)
+	connWrapper.Conn = conn
+	//? add the other arguments for re-attestation
+
+	return connWrapper, nil
 }
 
 // Implementation of Close in net.Listener iface
@@ -105,7 +110,7 @@ func (ln Listener) Addr() net.Addr {
 // Wrapper for tls.Listen
 // Returns custom Listener that will perform additional remote attestation
 // operations right after successful TLS connection establishment
-func Listen(network, laddr string, config *tls.Config, moreConfigs ...ConnectionOption[CmcConfig]) (net.Listener, error) {
+func Listen(network, laddr string, config *tls.Config, moreConfigs ...ConnectionOption[CmcConfig]) (Listener, error) {
 
 	// Default listener
 	listener := Listener{
@@ -126,13 +131,12 @@ func Listen(network, laddr string, config *tls.Config, moreConfigs ...Connection
 		return listener, fmt.Errorf("selected CMC API is not implemented")
 	}
 
-
-	if(listener.cmc == nil){
-		listener.cmc = &cmc.Cmc{}
-	}	
-	if(listener.cmc.Serializer == nil){
+	if listener.Cmc == nil {
+		listener.Cmc = &cmc.Cmc{}
+	}
+	if listener.Cmc.Serializer == nil {
 		log.Trace("No Serializer defined: use as JsonSerializer as default")
-		listener.cmc.Serializer = ar.JsonSerializer{}
+		listener.Cmc.Serializer = ar.JsonSerializer{}
 	}
 
 	// Listen
@@ -143,5 +147,5 @@ func Listen(network, laddr string, config *tls.Config, moreConfigs ...Connection
 	listener.Listener = ln
 	listener.Config = config
 
-	return net.Listener(listener), nil
+	return (listener), nil
 }
