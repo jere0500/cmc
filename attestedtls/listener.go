@@ -39,7 +39,7 @@ type Listener struct {
 // Implementation of Accept() in net.Listener iface
 // Calls Accept of the net.Listnener and additionally performs remote attestation
 // after connection establishment before returning the connection
-func (ln Listener) Accept() (*Conn, error) {
+func (ln Listener) Accept() (net.Conn, error) {
 	// Accept TLS connection
 	conn, err := ln.Listener.Accept()
 	if err != nil {
@@ -87,12 +87,17 @@ func (ln Listener) Accept() (*Conn, error) {
 
 	log.Info("Server-side aTLS connection complete")
 
-	//wrapping the tls.Conn into attestedtls.Conn, allows reattestation
-	connWrapper := new(Conn)
-	connWrapper.Conn = conn
-	//? add the other arguments for re-attestation
+	//wrapping the tls.Conn into attestedtls.Conn, enables automatic reattestation
+	connWrapper := Conn {
+		Conn: conn,
+		lastAttestation: time.Now(),
+		isDialer: false,
+		cc: ln.CmcConfig,
+		chbindings: chbindings,
+		sentReattest: false,
+	}
 
-	return connWrapper, nil
+	return &connWrapper, nil
 }
 
 // Implementation of Close in net.Listener iface

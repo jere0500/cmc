@@ -90,9 +90,15 @@ func Dial(network string, addr string, config *tls.Config, moreConfigs ...Connec
 
 	log.Info("Client-side aTLS connection complete")
 
-	//wrapping the tls.Conn into attestedtls.Conn, allows reattestation
-	connWrapper := new(Conn)
-	connWrapper.Conn = conn
+	//wrapping the tls.Conn into attestedtls.Conn, enables reattestation
+	connWrapper := Conn {
+		Conn: conn,
+		lastAttestation: time.Now(),
+		isDialer: true,
+		cc: cc,
+		chbindings: chbindings,
+		sentReattest: false,
+	}
 
-	return connWrapper, nil
+	return &connWrapper, nil
 }
