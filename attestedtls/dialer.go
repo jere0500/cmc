@@ -77,7 +77,7 @@ func Dial(network string, addr string, config *tls.Config, moreConfigs ...Connec
 		cc.Cmc = &cmc.Cmc{}
 	}
 	if cc.Cmc.Serializer == nil {
-		log.Trace("No Serializer defined: use as JsonSerializer as default")
+		log.Trace("No Serializer defined: use as CborSerializer as default")
 		cc.Cmc.Serializer = ar.CborSerializer{}
 	}
 

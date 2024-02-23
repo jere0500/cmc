@@ -18,6 +18,8 @@ package attestedtls
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net"
 
@@ -161,7 +163,15 @@ func readValue(readvalue []byte, selection AttestSelect, dialer bool, cc CmcConf
 	packet := new(atlsPacket)
 	err := cc.Cmc.Serializer.Unmarshal(remainVal, packet)
 	if err != nil {
+
+		log.Trace(hex.Dump(readvalue[:20]))
 		log.Errorf("could not unmarshal atls response: %v", err)
+		log.Trace(hex.Dump(remainVal[:20]))
+
+		 if e, ok := err.(*json.SyntaxError); ok {
+			log.Printf("syntax error at byte offset %d", e.Offset)
+		}
+
 		return nil, err
 	}
 

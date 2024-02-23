@@ -23,8 +23,8 @@ import (
 	"time"
 )
 
-const REATTEST_AFTER_TIME = 30 //after 30 seconds do reattestation
-const GRACE_PERIOD = 5         //seconds, where bytes are still passed after reattestation is due
+const REATTEST_AFTER_TIME = 30 * time.Second //after 30 seconds do reattestation
+const GRACE_PERIOD = 5 * time.Second         //seconds, where bytes are still passed after reattestation is due
 
 type Conn struct {
 	//wrapper for net.Conn
@@ -45,11 +45,12 @@ type Conn struct {
 
 // Write implements net.Conn.
 func (c *Conn) Write(b []byte) (n int, err error) {
-	if c.lastAttestation.Second()+REATTEST_AFTER_TIME+GRACE_PERIOD > time.Now().Second() {
+	
+	if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME + GRACE_PERIOD)){
 		return -1, fmt.Errorf("no reattestation received, terminate connnection")
 	}
 
-	if c.lastAttestation.Second()+REATTEST_AFTER_TIME > time.Now().Second() {
+	if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME)){
 		//do reattestation if (necessary)
 		initiateReattest(c)
 		if err != nil {
@@ -62,13 +63,12 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 }
 
 func (c *Conn) Read(b []byte) (int, error) {
-	//? TODO: check if the timing of the package is still in frame, or not, ..., other checks
 	out, err := c.Conn.Read(b)
-	if c.lastAttestation.Second()+REATTEST_AFTER_TIME+GRACE_PERIOD > time.Now().Second() {
+	if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME + GRACE_PERIOD)){
 		return -1, fmt.Errorf("no reattestation received, terminate connnection")
 	}
 
-	if c.lastAttestation.Second()+REATTEST_AFTER_TIME > time.Now().Second() {
+	if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME)){
 		//do reattestation if (necessary)
 		initiateReattest(c)
 		if err != nil {

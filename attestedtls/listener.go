@@ -140,8 +140,8 @@ func Listen(network, laddr string, config *tls.Config, moreConfigs ...Connection
 		listener.Cmc = &cmc.Cmc{}
 	}
 	if listener.Cmc.Serializer == nil {
-		log.Trace("No Serializer defined: use as JsonSerializer as default")
-		listener.Cmc.Serializer = ar.JsonSerializer{}
+		log.Trace("No Serializer defined: use as Cbor as default")
+		listener.Cmc.Serializer = ar.CborSerializer{}
 	}
 
 	// Listen
