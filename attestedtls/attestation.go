@@ -41,30 +41,21 @@ func attestDialer(conn *tls.Conn, chbindings []byte, cc CmcConfig) error {
 	//building the atls Message
 	sendAttestationReport(conn, chbindings, cc, true)
 
-	readvalue, err := Read(conn)
+	report, err := Read(conn)
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
 
-	readvalue, err = readValue(readvalue, cc.Attest, true, cc)
+	report, err = readValue(report, cc.Attest, true, cc)
 	if err != nil {
 		return err
 	}
 
-	//optional: Wait for attestation report from Server
-	if cc.Attest == Attest_Mutual || cc.Attest == Attest_Server {
-		report := readvalue
-		// Verify AR from listener with own channel bindings
-		log.Trace("Verifying attestation report from listener")
-		err = cc.CmcApi.verifyAR(chbindings, report, cc)
-		if err != nil {
-			return err
-		}
-	} else {
-		log.Debug("Skipping client-side verification")
+	err = validateAttestationReport(chbindings, cc, report, true)
+	if err != nil {
+		return err
 	}
 
-	log.Trace("Attestation successful")
 
 	return nil
 }
@@ -83,19 +74,10 @@ func attestListener(conn *tls.Conn, chbindings []byte, cc CmcConfig) error {
 		return err
 	}
 
-	// optional: Wait for attestation report from client
-	if cc.Attest == Attest_Mutual || cc.Attest == Attest_Client {
-		// Verify AR from dialer with own channel bindings
-		log.Trace("Verifying attestation report from dialer...")
-		err = cc.CmcApi.verifyAR(chbindings, report, cc)
-		if err != nil {
-			return err
-		}
-	} else {
-		log.Debug("Skipping server-side verification")
+	err = validateAttestationReport(chbindings, cc, report, false)
+	if err != nil {
+		return err
 	}
-
-	log.Trace("Attestation successful")
 
 	return nil
 }
@@ -142,11 +124,27 @@ func sendAttestationReport(conn net.Conn, chbindings []byte, cc CmcConfig, isDia
 		//if not sending attestation report, send the attestation mode
 		err = Write(append(ATLS_MAGIC_VALUE[:], marshalledResponse...), conn)
 		if err != nil {
-			return fmt.Errorf("failed to send skip client Attestation: %w", err)
+			return fmt.Errorf("failed to send skip Attestation: %w", err)
 		}
-		log.Debug("Skipping server-side attestation")
+		log.Debug("Skipping attestation")
 	}
 
+	return nil
+}
+
+func validateAttestationReport(chbindings []byte, cc CmcConfig, report []byte, isDialer bool) error {
+	if cc.Attest == Attest_Mutual || (isDialer && cc.Attest == Attest_Server) || (!isDialer && cc.Attest == Attest_Client) {
+		// Verify AR from dialer with own channel bindings
+		log.Trace("Verifying received attestation report")
+		err := cc.CmcApi.verifyAR(chbindings, report, cc)
+		if err != nil {
+			return err
+		}
+	} else {
+		log.Trace("Skipping verification")
+	}
+
+	log.Trace("Attestation successful")
 	return nil
 }
 
