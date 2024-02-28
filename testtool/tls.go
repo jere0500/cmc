@@ -63,10 +63,39 @@ func dialInternalAddr(c *config, api atls.CmcApiSelect, addr string, tlsConf *tl
 	defer conn.Close()
 	_ = conn.SetReadDeadline(time.Now().Add(timeoutSec * time.Second))
 
+	if c.KeepAlive {
+		ticker := time.NewTicker(time.Second)
+		quit := make(chan struct{})
+		go func() error {
+			for {
+				select {
+				case <-ticker.C:
+					err = sendHello(conn)
+					if err != nil {
+						return err
+					}
+
+				case <-quit:
+					ticker.Stop()
+					return nil
+				}
+			}
+		}()
+	} else {
+		err = sendHello(conn)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func sendHello(conn net.Conn) error {
 	// Testing: write a hello string
 	msg := "hello\n"
 	log.Infof("Sending to peer: %v", msg)
-	_, err = conn.Write([]byte(msg))
+	_, err := conn.Write([]byte(msg))
 	if err != nil {
 		return fmt.Errorf("failed to write: %v", err)
 	}
@@ -224,18 +253,42 @@ func listenInternal(c *config, api atls.CmcApiSelect, cmc *cmc.Cmc) {
 		}
 
 		// Handle established connections
-		go handleConnection(conn)
+		go handleConnection(conn, c.KeepAlive)
 	}
 }
 
 // Simply acts as an echo server and returns the received string
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, KeepAlive bool) {
 	defer conn.Close()
 	r := bufio.NewReader(conn)
 
+	if KeepAlive {
+		ticker := time.NewTicker(time.Second)
+		quit := make(chan struct{})
+		go func() error {
+			for {
+				select {
+				case <-ticker.C:
+					err := receiveHello(conn, r)
+					if err != nil {
+						return err
+					}
+				case <-quit:
+					ticker.Stop()
+					return nil
+				}
+			}
+		}()
+	} else {
+		receiveHello(conn, r)
+	}
+}
+
+func receiveHello(conn net.Conn, r *bufio.Reader) error {
 	msg, err := r.ReadString('\n')
 	if err != nil {
 		log.Errorf("Failed to read: %v", err)
+		return err
 	}
 	log.Infof("Received from peer: %v", msg)
 
@@ -243,5 +296,8 @@ func handleConnection(conn net.Conn) {
 	_, err = conn.Write([]byte(msg + "\n"))
 	if err != nil {
 		log.Errorf("Failed to write: %v", err)
+		return err
 	}
+
+	return nil
 }
