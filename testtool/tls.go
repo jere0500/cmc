@@ -61,26 +61,38 @@ func dialInternalAddr(c *config, api atls.CmcApiSelect, addr string, tlsConf *tl
 		return fmt.Errorf("failed to dial server: %v", err)
 	}
 	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now().Add(timeoutSec * time.Second))
+	// _ = conn.SetReadDeadline(time.Now().Add(timeoutSec * time.Second))
+
+	//? keep alive comes through
+	log.Tracef("keep alive dial: %v", c.KeepAlive)
 
 	if c.KeepAlive {
+		var wg sync.WaitGroup
+
 		ticker := time.NewTicker(time.Second)
 		quit := make(chan struct{})
+		log.Trace("define the go function")
+		wg.Add(1)
 		go func() error {
+			log.Trace("test")
 			for {
 				select {
 				case <-ticker.C:
 					err = sendHello(conn)
 					if err != nil {
+						log.Error(err)
+						wg.Done()
 						return err
 					}
-
 				case <-quit:
+					log.Trace("quit signal")
 					ticker.Stop()
+					wg.Done()
 					return nil
 				}
 			}
 		}()
+		wg.Wait()
 	} else {
 		err = sendHello(conn)
 		if err != nil {
@@ -94,7 +106,7 @@ func dialInternalAddr(c *config, api atls.CmcApiSelect, addr string, tlsConf *tl
 func sendHello(conn net.Conn) error {
 	// Testing: write a hello string
 	msg := "hello\n"
-	log.Infof("Sending to peer: %v", msg)
+	log.Infof("Sending to peer: %v, len %v", msg, len(msg))
 	_, err := conn.Write([]byte(msg))
 	if err != nil {
 		return fmt.Errorf("failed to write: %v", err)
@@ -104,7 +116,7 @@ func sendHello(conn net.Conn) error {
 	buf := make([]byte, 100)
 	n, err := conn.Read(buf)
 	if err != nil {
-		return fmt.Errorf("failed to read. %v", err)
+		return fmt.Errorf("failed to read: %v", err)
 	}
 	log.Infof("Received from peer: %v", string(buf[:n-1]))
 
@@ -263,22 +275,30 @@ func handleConnection(conn net.Conn, KeepAlive bool) {
 	r := bufio.NewReader(conn)
 
 	if KeepAlive {
+		var wg sync.WaitGroup
+
 		ticker := time.NewTicker(time.Second)
 		quit := make(chan struct{})
+		wg.Add(1)
 		go func() error {
 			for {
 				select {
 				case <-ticker.C:
+					log.Trace("receive loop Hello")
 					err := receiveHello(conn, r)
 					if err != nil {
+						wg.Done()
 						return err
 					}
 				case <-quit:
 					ticker.Stop()
+					wg.Done()
 					return nil
 				}
 			}
 		}()
+
+		wg.Wait()
 	} else {
 		receiveHello(conn, r)
 	}
@@ -290,7 +310,8 @@ func receiveHello(conn net.Conn, r *bufio.Reader) error {
 		log.Errorf("Failed to read: %v", err)
 		return err
 	}
-	log.Infof("Received from peer: %v", msg)
+	log.Infof("Received from peer: %v, len: %v", msg, len(msg))
+	//only get the first part of the message
 
 	log.Infof("Echoing: %v", msg)
 	_, err = conn.Write([]byte(msg + "\n"))

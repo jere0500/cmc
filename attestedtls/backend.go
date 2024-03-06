@@ -28,8 +28,10 @@ import (
 func Write(msg []byte, c net.Conn) error {
 	lenbuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lenbuf, uint32(len(msg)))
+	log.Tracef("backend write len: %v", len(msg))
 
 	buf := append(lenbuf, msg...)
+	log.Tracef("backend buf len: %v", len(buf))
 
 	_, err := c.Write(buf)
 

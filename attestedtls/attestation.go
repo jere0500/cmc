@@ -28,6 +28,7 @@ import (
 
 // ? should be const
 var ATLS_MAGIC_VALUE = [4]byte{0xC1, 0xD4, 0xCC, 0xD3}
+var REVERSE_ATLS_MAGIC_VALUE = [4]byte{0xD3, 0xCC, 0xD4, 0xC1}
 
 var id = "0000"
 
@@ -111,8 +112,9 @@ func sendAttestationReport(conn net.Conn, chbindings []byte, cc CmcConfig, isDia
 		// Send own attestation report to dialer
 		log.Trace("Sending own attestation report")
 
-		//? todo prepend the magic value
-		err = Write(append(ATLS_MAGIC_VALUE[:], marshalledResponse...), conn)
+		
+		responseWithEnd := append(marshalledResponse, REVERSE_ATLS_MAGIC_VALUE[:]...) 
+		err = Write(append(ATLS_MAGIC_VALUE[:], responseWithEnd...), conn)
 		if err != nil {
 			return fmt.Errorf("failed to send AR: %w", err)
 		}
@@ -134,21 +136,6 @@ func sendAttestationReport(conn net.Conn, chbindings []byte, cc CmcConfig, isDia
 	return nil
 }
 
-func validateAttestationReport(chbindings []byte, cc CmcConfig, report []byte, isDialer bool) error {
-	if cc.Attest == Attest_Mutual || (isDialer && cc.Attest == Attest_Server) || (!isDialer && cc.Attest == Attest_Client) {
-		// Verify AR from dialer with own channel bindings
-		log.Trace("Verifying received attestation report")
-		err := cc.CmcApi.verifyAR(chbindings, report, cc)
-		if err != nil {
-			return err
-		}
-	} else {
-		log.Trace("Skipping verification")
-	}
-
-	log.Trace("Attestation successful")
-	return nil
-}
 
 func readValue(readvalue []byte, selection AttestSelect, dialer bool, cc CmcConfig) ([]byte, error) {
 
@@ -158,7 +145,13 @@ func readValue(readvalue []byte, selection AttestSelect, dialer bool, cc CmcConf
 		return nil, fmt.Errorf("wrong magic value")
 	}
 
-	remainVal := readvalue[4:]
+	reverseMagVal := readvalue[len(readvalue)-4:]
+	if !bytes.Equal(reverseMagVal, REVERSE_ATLS_MAGIC_VALUE[:]) {
+		return nil, fmt.Errorf("wrong reverse magic value")
+	}
+
+	//? should only contain the atlspacket
+	remainVal := readvalue[4:len(readvalue)-4]
 
 	packet := new(atlsPacket)
 	err := cc.Cmc.Serializer.Unmarshal(remainVal, packet)
@@ -191,6 +184,23 @@ func readValue(readvalue []byte, selection AttestSelect, dialer bool, cc CmcConf
 	}
 
 	return packet.Response, nil
+}
+
+
+func validateAttestationReport(chbindings []byte, cc CmcConfig, report []byte, isDialer bool) error {
+	if cc.Attest == Attest_Mutual || (isDialer && cc.Attest == Attest_Server) || (!isDialer && cc.Attest == Attest_Client) {
+		// Verify AR from dialer with own channel bindings
+		log.Trace("Verifying received attestation report")
+		err := cc.CmcApi.verifyAR(chbindings, report, cc)
+		if err != nil {
+			return err
+		}
+	} else {
+		log.Trace("Skipping verification")
+	}
+
+	log.Trace("Attestation successful")
+	return nil
 }
 
 func selectionString(selection byte) (string, error) {

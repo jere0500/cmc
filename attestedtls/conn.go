@@ -18,12 +18,13 @@ package attestedtls
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"time"
 )
 
-const REATTEST_AFTER_TIME = 30 * time.Second //after 30 seconds do reattestation
+const REATTEST_AFTER_TIME = 12 * time.Second //after 30 seconds do reattestation
 const GRACE_PERIOD = 5 * time.Second         //seconds, where bytes are still passed after reattestation is due
 
 type Conn struct {
@@ -45,12 +46,12 @@ type Conn struct {
 
 // Write implements net.Conn.
 func (c *Conn) Write(b []byte) (n int, err error) {
-	
-	if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME + GRACE_PERIOD)){
-		return -1, fmt.Errorf("no reattestation received, terminate connnection")
+
+	if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME + GRACE_PERIOD)) {
+		return 0, fmt.Errorf("no reattestation received, terminate connnection")
 	}
 
-	if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME)){
+	if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME)) {
 		//do reattestation if (necessary)
 		initiateReattest(c)
 		if err != nil {
@@ -59,40 +60,49 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 		}
 	}
 
-	return c.Conn.Write(b)
+	err = Write(b, c.Conn)
+	return len(b), err
 }
 
-func (c *Conn) Read(b []byte) (int, error) {
-	out, err := c.Conn.Read(b)
-	if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME + GRACE_PERIOD)){
-		return -1, fmt.Errorf("no reattestation received, terminate connnection")
+func (c *Conn) Read(a []byte) (int, error) {
+	b, err := Read(c.Conn)
+
+	if err != nil {
+		return 0, err
 	}
 
-	if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME)){
+	if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME + GRACE_PERIOD)) {
+		return 0, fmt.Errorf("no reattestation received, terminate connnection")
+	}
+
+	if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME)) {
 		//do reattestation if (necessary)
 		initiateReattest(c)
 		if err != nil {
 			//still forwarding the byte
-			return out, err
+			log.Debug(err)
 		}
 	}
 
 	//check for any incomming attestation reports
-	ret := bytes.Index(b, ATLS_MAGIC_VALUE[:])
-	if ret != -1 {
+	magValIndex := bytes.Index(b, ATLS_MAGIC_VALUE[:])
+	reverseMagValIndex := bytes.Index(b, REVERSE_ATLS_MAGIC_VALUE[:])
+	if (magValIndex != -1) && (reverseMagValIndex != -1) && (magValIndex < reverseMagValIndex) {
 		// buffer contains the magic value
-		report, err := readValue(b[ret:], c.cc.Attest, c.isDialer, c.cc)
+		report, err := readValue(b[magValIndex:reverseMagValIndex+4], c.cc.Attest, c.isDialer, c.cc)
 		if err != nil {
 			if strings.Contains("could not unmarshal atls response", err.Error()) {
 				//invalid cbor serialization
 				//continue
 				log.Trace(err)
+				return len(b), err
 			} else {
 				//? should probably terminate the connection
 				log.Tracef("invalid attestation report: %v", err)
-				return -1, err
+				return 0, err
 			}
 		} else {
+			log.Trace("Validate Reattestation")
 			//verify the attestation report
 			validateAttestationReport(c.chbindings, c.cc, report, c.isDialer)
 
@@ -101,9 +111,23 @@ func (c *Conn) Read(b []byte) (int, error) {
 			c.sentReattest = false
 		}
 
+		//remove
+		bnew := append(b[:magValIndex], b[reverseMagValIndex+4:]...)
+		b = bnew
+		//recursivly get the new entry
+		if len(bnew) == 0 {
+			return c.Read(a)
+		}
 	}
 
-	return out, err
+
+	//only forward the original message
+	n := copy(a, b)
+	if n < len(b) {
+		return n, io.EOF
+	}
+
+	return len(b), err
 }
 
 func initiateReattest(c *Conn) error {
