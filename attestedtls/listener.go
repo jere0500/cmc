@@ -88,13 +88,12 @@ func (ln Listener) Accept() (net.Conn, error) {
 	log.Info("Server-side aTLS connection complete")
 
 	//wrapping the tls.Conn into attestedtls.Conn, enables automatic reattestation
-	connWrapper := Conn {
-		Conn: conn,
-		lastAttestation: time.Now(),
-		isDialer: false,
-		cc: ln.CmcConfig,
-		chbindings: chbindings,
-		sentReattest: false,
+	connWrapper := NewConn(&ln.CmcConfig, chbindings, false, conn, 0, 0)
+
+	//start the re-attestation timer
+	err = connWrapper.StartReattestTimer()
+	if err != nil {
+		return nil, err 
 	}
 
 	return &connWrapper, nil

@@ -74,7 +74,6 @@ func dialInternalAddr(c *config, api atls.CmcApiSelect, addr string, tlsConf *tl
 		log.Trace("define the go function")
 		wg.Add(1)
 		go func() error {
-			log.Trace("test")
 			for {
 				select {
 				case <-ticker.C:
