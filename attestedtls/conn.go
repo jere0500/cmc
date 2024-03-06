@@ -26,11 +26,8 @@ import (
 	"time"
 )
 
-const REATTEST_AFTER_TIME = 120 * time.Second                      //after 30 seconds do reattestation
-const REJECT_AFTER_TIME = REATTEST_AFTER_TIME + (5 * time.Second) //Time after which messages will be rejected
-
-const REATTEST_AFTER_MESSAGES = 20 //after MESSAGE_LIMIT, send new reattestation
-const REJECT_AFTER_MESSAGES = REATTEST_AFTER_MESSAGES + 5     //kill connection if passed MESSAGE_LIMIT+ MESSAGE_GRACE_LIMIT
+const REJECT_AFTER_ADDTIME = (5 * time.Second) //kill connection if passed c.cc.ReattestAfterSeconds + REJECT_AFTER_ADDTIME
+const REJECT_AFTER_ADDMESSAGES = 5             //kill connection if passed c.cc.ReattestAfterMessages + REJECT_AFTER_ADDMESSAGES
 
 type Conn struct {
 	//wrapper for net.Conn
@@ -47,16 +44,16 @@ type Conn struct {
 
 	//to prevent spamming attestation reports
 	sentReattest  bool
-	reattestMutex sync.Mutex 
+	reattestMutex sync.Mutex
 
-	//? experimental 
+	//? experimental
 	receivedReattest bool
 	//?maybe additional attributs
 	//?the two timer layouts
 }
 
-//? TODO write a default contructor
-func NewConn (cc *CmcConfig ,chbindings []byte ,isDialer bool ,conn net.Conn, reattestAfterMessages int, reattestAfterSeconds int) Conn {
+// ? TODO write a default contructor
+func NewConn(cc *CmcConfig, chbindings []byte, isDialer bool, conn net.Conn) Conn {
 	return Conn{
 		Conn:             conn,
 		lastAttestation:  time.Now(),
@@ -71,7 +68,10 @@ func NewConn (cc *CmcConfig ,chbindings []byte ,isDialer bool ,conn net.Conn, re
 }
 
 func (c *Conn) StartReattestTimer() error {
-	ticker := time.NewTicker(REATTEST_AFTER_TIME)
+	if(c.cc.ReattestAfterSeconds <= 0){
+		return fmt.Errorf("invalid Reattestation Duration")
+	}
+	ticker := time.NewTicker(time.Duration(c.cc.ReattestAfterSeconds * int(time.Second)))
 	quit := make(chan struct{})
 
 	go func() {
@@ -97,25 +97,19 @@ func (c *Conn) StartReattestTimer() error {
 // Write implements net.Conn.
 func (c *Conn) Write(b []byte) (n int, err error) {
 
-	if time.Now().After(c.lastAttestation.Add(REJECT_AFTER_TIME)) && c.getMessageCounter() >= REJECT_AFTER_MESSAGES {
+	//check if
+	if c.checkReject() {
 		return 0, fmt.Errorf("no reattestation received, terminate connnection")
 	}
-
-	// if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME)) {
-	// 	//do reattestation if (necessary)
-	// 	err = initiateReattest(c)
-	// 	if err != nil {
-	// 		//still forwarding the byte
-	// 		log.Debug(err)
-	// 	}
-	// }
 
 	err = Write(b, c.Conn)
 	if err == nil {
 		//sucessfull message write
-		if REJECT_AFTER_MESSAGES > 0 {
+
+		//manage messageCounter if option is set
+		if c.cc.ReattestAfterMessages > 0 {
 			c.incrementMessageCounter()
-			if c.getMessageCounter() >= REATTEST_AFTER_MESSAGES {
+			if c.getMessageCounter() >= uint32(c.cc.ReattestAfterMessages) {
 				err = initiateReattest(c)
 				if err != nil {
 					log.Errorf("failed reattest after message Limit, %v", err)
@@ -128,17 +122,17 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 
 func (c *Conn) Read(a []byte) (int, error) {
 
-
 	b, err := Read(c.Conn)
 
 	if err != nil {
 		return 0, err
 	}
-
 	//sucessfull message read
-	if REJECT_AFTER_MESSAGES > 0 {
+
+	//manage messageCounter if option is set
+	if c.cc.ReattestAfterMessages > 0 {
 		c.incrementMessageCounter()
-		if c.getMessageCounter() >= REATTEST_AFTER_MESSAGES {
+		if c.getMessageCounter() >= uint32(c.cc.ReattestAfterMessages) {
 			err = initiateReattest(c)
 			if err != nil {
 				log.Errorf("failed reattest after message Limit, %v", err)
@@ -146,22 +140,9 @@ func (c *Conn) Read(a []byte) (int, error) {
 		}
 	}
 
-	if(c.receivedReattest){
-
-	}
-
-	if time.Now().After(c.lastAttestation.Add(REJECT_AFTER_TIME)) && c.getMessageCounter() >= REJECT_AFTER_MESSAGES {
+	if c.checkReject() {
 		return 0, fmt.Errorf("no reattestation received, terminate connnection")
 	}
-
-	// if time.Now().After(c.lastAttestation.Add(REATTEST_AFTER_TIME)) {
-	// 	//do reattestation if (necessary)
-	// 	initiateReattest(c)
-	// 	if err != nil {
-	// 		//still forwarding the byte
-	// 		log.Debug(err)
-	// 	}
-	// }
 
 	//check for any incomming attestation reports
 	magValIndex := bytes.Index(b, ATLS_MAGIC_VALUE[:])
@@ -190,9 +171,9 @@ func (c *Conn) Read(a []byte) (int, error) {
 
 			//case when receiving a reattestation without having received a reattestation
 			//? risky line: could have some weird side effects
-			if(c.sentReattest){
-					c.resetReattest()	
-			}else{
+			if c.sentReattest {
+				c.resetReattest()
+			} else {
 				c.receivedReattest = true
 			}
 		}
@@ -227,13 +208,12 @@ func initiateReattest(c *Conn) error {
 	defer c.reattestMutex.Unlock()
 
 	//second check to prevent falling through
-	//? there might be a better way to do that 
+	//? there might be a better way to do that
 	if c.sentReattest == true {
 		return nil
 	}
 
 	c.sentReattest = true
-
 
 	//do reattestation if (necessary)
 	err := sendAttestationReport(c.Conn, c.chbindings, c.cc, c.isDialer)
@@ -243,12 +223,18 @@ func initiateReattest(c *Conn) error {
 		return err
 	}
 
-	//reset counter 
-	if(c.receivedReattest){
+	//reset counter
+	if c.receivedReattest {
 		c.resetReattest()
 	}
 
 	return nil
+}
+
+func (c *Conn) checkReject() bool {
+	reject := time.Now().After(c.lastAttestation.Add(time.Duration(c.cc.ReattestAfterSeconds + int(REJECT_AFTER_ADDTIME))))
+	reject = reject && c.getMessageCounter() >= uint32(c.cc.ReattestAfterMessages)+REJECT_AFTER_ADDMESSAGES
+	return reject
 }
 
 func (c *Conn) incrementMessageCounter() {

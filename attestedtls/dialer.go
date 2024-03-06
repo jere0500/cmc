@@ -29,7 +29,7 @@ import (
 // Wraps tls.Dial
 // Additionally performs remote attestation
 // before returning the established connection.
-func Dial(network string, addr string, config *tls.Config, moreConfigs ...ConnectionOption[CmcConfig]) (*Conn, error) {
+func Dial(network string, addr string, config *tls.Config, moreConfigs ...ConnectionOption[CmcConfig]) (net.Conn, error) {
 
 	if config == nil {
 		return nil, errors.New("failed to dial. TLS configuration not provided")
@@ -90,15 +90,19 @@ func Dial(network string, addr string, config *tls.Config, moreConfigs ...Connec
 
 	log.Info("Client-side aTLS connection complete")
 
-	//wrapping the tls.Conn into attestedtls.Conn, enables reattestation
-	connWrapper := NewConn(&cc, chbindings, true, conn, 0, 0)
+	if cc.Reattest {
+		//use the reattest wrapper
+		connWrapper := NewConn(&cc, chbindings, true, conn)
 
-	//? todo needs to be set, same as message limit
-	//start the re-attestation timer
-	err = connWrapper.StartReattestTimer()
-	if err != nil {
-		return nil, err 
+		//start the re-attestation timer
+		if cc.ReattestAfterSeconds > 0 {
+			err = connWrapper.StartReattestTimer()
+			if err != nil {
+				return nil, err
+			}
+		}
+		return &connWrapper, nil
 	}
 
-	return &connWrapper, nil
+	return conn, nil
 }

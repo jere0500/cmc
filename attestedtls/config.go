@@ -47,15 +47,18 @@ const (
 // Struct that holds information on cmc address and port
 // to be used by Listener and DialConfig
 type CmcConfig struct {
-	CmcAddr  string
-	CmcApi   CmcApi
-	Network  string
-	Ca       []byte
-	Policies []byte
-	Mtls     bool
-	Attest   AttestSelect
-	ResultCb func(result *ar.VerificationResult)
-	Cmc      *cmc.Cmc
+	CmcAddr               string
+	CmcApi                CmcApi
+	Network               string
+	Ca                    []byte
+	Policies              []byte
+	Mtls                  bool
+	Attest                AttestSelect
+	Reattest              bool
+	ReattestAfterSeconds  int
+	ReattestAfterMessages int
+	ResultCb              func(result *ar.VerificationResult)
+	Cmc                   *cmc.Cmc
 }
 
 type CmcApi interface {
@@ -143,6 +146,14 @@ func WithCmc(cmc *cmc.Cmc) ConnectionOption[CmcConfig] {
 func WithCmcConfig(cmcConfig *CmcConfig) ConnectionOption[CmcConfig] {
 	return func(c *CmcConfig) {
 		*c = *cmcConfig
+	}
+}
+
+func WithReattest(reattestAfterSeconds int, reattestAfterMessages int) ConnectionOption[CmcConfig] {
+	return func(c *CmcConfig){
+		c.Reattest = reattestAfterSeconds>0 || reattestAfterMessages>0
+		c.ReattestAfterMessages = reattestAfterMessages
+		c.ReattestAfterSeconds = reattestAfterSeconds
 	}
 }
 

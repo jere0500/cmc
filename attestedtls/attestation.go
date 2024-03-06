@@ -126,7 +126,8 @@ func sendAttestationReport(conn net.Conn, chbindings []byte, cc CmcConfig, isDia
 			return err
 		}
 		//if not sending attestation report, send the attestation mode
-		err = Write(append(ATLS_MAGIC_VALUE[:], marshalledResponse...), conn)
+		responseWithEnd := append(marshalledResponse, REVERSE_ATLS_MAGIC_VALUE[:]...) 
+		err = Write(append(ATLS_MAGIC_VALUE[:], responseWithEnd...), conn)
 		if err != nil {
 			return fmt.Errorf("failed to send skip Attestation: %w", err)
 		}

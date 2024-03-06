@@ -87,16 +87,22 @@ func (ln Listener) Accept() (net.Conn, error) {
 
 	log.Info("Server-side aTLS connection complete")
 
-	//wrapping the tls.Conn into attestedtls.Conn, enables automatic reattestation
-	connWrapper := NewConn(&ln.CmcConfig, chbindings, false, conn, 0, 0)
+	if ln.CmcConfig.Reattest {
+		//wrapping the tls.Conn into attestedtls.Conn, enables automatic reattestation
+		connWrapper := NewConn(&ln.CmcConfig, chbindings, false, conn)
 
-	//start the re-attestation timer
-	err = connWrapper.StartReattestTimer()
-	if err != nil {
-		return nil, err 
+		//start the re-attestation timer
+		if ln.CmcConfig.ReattestAfterSeconds > 0 {
+			err = connWrapper.StartReattestTimer()
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		return &connWrapper, nil
 	}
 
-	return &connWrapper, nil
+	return conn, nil
 }
 
 // Implementation of Close in net.Listener iface
