@@ -85,6 +85,8 @@ type config struct {
 	Cache          string   `json:"cache"`
 	MeasurementLog bool     `json:"measurementLog"`
 	KeepAlive      bool     `json:"keepAlive"`
+	RaMessage      int	`json:"raMessage"`
+	RaSecond       int	`json:"raSecond"`
 	Header         []string `json:"header"`
 	Method         string   `json:"method"`
 	Data           string   `json:"data"`
@@ -119,6 +121,8 @@ const (
 	cacheFlag          = "cache"
 	measurementLogFlag = "measurementLog"
 	keepAliveFlag      = "keepAlive"
+	raSecondFlag	   = "raSecond"
+	raMessageFlag	   = "raMessage"
 	headerFlag         = "header"
 	methodFlag         = "method"
 	dataFlag           = "data"
@@ -163,7 +167,9 @@ func getConfig() *config {
 	cache := flag.String(cacheFlag, "",
 		"Optional folder to cache metadata for offline backup (only for libapi)")
 	measurementLog := flag.Bool(measurementLogFlag, false, "Indicates whether to include measured events in measurement and validation report")
-	keepAlive := flag.Bool(keepAliveFlag, false, "keeps the TLS connection with regular messages alive")
+	keepAlive := flag.Bool(keepAliveFlag, false, "keeps the TLS connection alive")
+	raSecond := flag.Int(raSecondFlag, 0, "seconds after which the parties reattest (need keepAlive)")
+	raMessage := flag.Int(raMessageFlag, 0, "messages after which the parties reattest (need keepAlive)")
 	headers := flag.String(headerFlag, "", "Set header for HTTP POST requests")
 	method := flag.String(methodFlag, "", "Set HTTP request method (GET, POST, PUT, HEADER)")
 	data := flag.String(dataFlag, "", "Set HTTP body for POST and PUT requests")
@@ -265,6 +271,12 @@ func getConfig() *config {
 	}
 	if internal.FlagPassed(keepAliveFlag) {
 		c.KeepAlive = *keepAlive
+	}
+	if internal.FlagPassed(raMessageFlag) {
+		c.RaMessage = *raMessage
+	}
+	if internal.FlagPassed(raSecondFlag) {
+		c.RaSecond = *raSecond
 	}
 	if internal.FlagPassed(headerFlag) {
 		c.Header = strings.Split(*headers, ",")
@@ -387,8 +399,10 @@ func printConfig(c *config) {
 	log.Debugf("\tCaFile      	 : %v", c.CaFile)
 	log.Debugf("\tMtls        	 : %v", c.Mtls)
 	log.Debugf("\tAttest      	 : %v", c.Attest)
-	log.Debugf("\tEvent Information  : %v", c.MeasurementLog)
-	log.Debugf("\tKeepAlive Conn     : %v", c.KeepAlive)
+	log.Debugf("\tMeasurement Log    : %v", c.MeasurementLog)
+	log.Debugf("\tKeepAlive          : %v", c.KeepAlive)
+	log.Debugf("\tRaSecond           : %v", c.RaSecond)
+	log.Debugf("\tRaMessage          : %v", c.RaMessage)
 	if c.PoliciesFile != "" {
 		log.Debugf("\tPoliciesFile : %v", c.PoliciesFile)
 	}

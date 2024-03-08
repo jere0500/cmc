@@ -56,7 +56,7 @@ func dialInternalAddr(c *config, api atls.CmcApiSelect, addr string, tlsConf *tl
 			// Log errors if any
 			result.PrintErr()
 		}),
-		atls.WithReattest(10, 20),
+		atls.WithReattest(c.RaSecond, c.RaMessage),
 		atls.WithCmc(cmc))
 	if err != nil {
 		return fmt.Errorf("failed to dial server: %v", err)
@@ -249,7 +249,7 @@ func listenInternal(c *config, api atls.CmcApiSelect, cmc *cmc.Cmc) {
 			// Log errors if any
 			result.PrintErr()
 		}),
-		atls.WithReattest(10, 20),
+		atls.WithReattest(c.RaSecond, c.RaMessage),
 		atls.WithCmc(cmc))
 	if err != nil {
 		log.Fatalf("Failed to listen for connections: %v", err)
